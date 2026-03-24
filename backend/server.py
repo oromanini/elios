@@ -32,9 +32,15 @@ JWT_SECRET = os.environ.get('JWT_SECRET', 'default-secret-key')
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = 24
 
-# DeepSeek Configuration
+# AI Provider Configuration
+AI_PROVIDER = os.environ.get('AI_PROVIDER', 'deepseek').lower()
 DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY', '')
-DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"
+DEEPSEEK_BASE_URL = os.environ.get('DEEPSEEK_BASE_URL', 'https://api.deepseek.com/v1')
+DEEPSEEK_MODEL = os.environ.get('DEEPSEEK_MODEL', 'deepseek-chat')
+
+GROQ_API_KEY = os.environ.get('GROQ_API_KEY', '')
+GROQ_BASE_URL = os.environ.get('GROQ_BASE_URL', 'https://api.groq.com/openai/v1')
+GROQ_MODEL = os.environ.get('GROQ_MODEL', 'llama-3.3-70b-versatile')
 
 # SMTP Configuration
 SMTP_HOST = os.environ.get('SMTP_HOST', 'smtp.hostinger.com')
@@ -420,11 +426,30 @@ async def build_user_context(user_id: str) -> str:
     
     return "\n".join(context_parts)
 
-async def call_deepseek(system_message: str, user_message: str, history: List[dict] = None) -> str:
-    """Call DeepSeek API for chat completion"""
+def get_ai_provider_settings() -> Dict[str, str]:
+    """Return provider settings based on AI_PROVIDER env var."""
+    providers = {
+        "deepseek": {
+            "api_key": DEEPSEEK_API_KEY,
+            "base_url": DEEPSEEK_BASE_URL,
+            "model": DEEPSEEK_MODEL,
+            "name": "DeepSeek"
+        },
+        "groq": {
+            "api_key": GROQ_API_KEY,
+            "base_url": GROQ_BASE_URL,
+            "model": GROQ_MODEL,
+            "name": "Groq"
+        }
+    }
+    return providers.get(AI_PROVIDER, providers["deepseek"])
+
+async def call_ai_provider(system_message: str, user_message: str, history: List[dict] = None) -> str:
+    """Call configured AI provider for chat completion using OpenAI-compatible API."""
+    provider = get_ai_provider_settings()
     
-    if not DEEPSEEK_API_KEY:
-        return "Erro: Chave da API DeepSeek não configurada. Contate o administrador."
+    if not provider["api_key"]:
+        return f"Erro: Chave da API {provider['name']} não configurada. Contate o administrador."
     
     messages = [{"role": "system", "content": system_message}]
     
@@ -439,13 +464,13 @@ async def call_deepseek(system_message: str, user_message: str, history: List[di
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(
-                f"{DEEPSEEK_BASE_URL}/chat/completions",
+                f"{provider['base_url']}/chat/completions",
                 headers={
-                    "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+                    "Authorization": f"Bearer {provider['api_key']}",
                     "Content-Type": "application/json"
                 },
                 json={
-                    "model": "deepseek-chat",
+                    "model": provider["model"],
                     "messages": messages,
                     "temperature": 0.7,
                     "max_tokens": 1500
@@ -453,17 +478,19 @@ async def call_deepseek(system_message: str, user_message: str, history: List[di
             )
             
             if response.status_code != 200:
-                logger.error(f"DeepSeek API error: {response.status_code} - {response.text}")
+                logger.error(
+                    f"{provider['name']} API error: {response.status_code} - {response.text}"
+                )
                 return f"Erro na API: {response.status_code}. Tente novamente."
             
             data = response.json()
             return data["choices"][0]["message"]["content"]
             
     except httpx.TimeoutException:
-        logger.error("DeepSeek API timeout")
+        logger.error(f"{provider['name']} API timeout")
         return "A resposta demorou muito. Por favor, tente novamente."
     except Exception as e:
-        logger.error(f"DeepSeek API error: {e}")
+        logger.error(f"{provider['name']} API error: {e}")
         return f"Erro ao processar sua mensagem: {str(e)}"
 
 async def chat_with_elios(user_id: str, message: str, context: str = None, pillar: str = None) -> str:
@@ -492,8 +519,8 @@ async def chat_with_elios(user_id: str, message: str, context: str = None, pilla
     ).sort("created_at", -1).limit(10).to_list(10)
     history.reverse()
     
-    # Call DeepSeek
-    response = await call_deepseek(full_system_message, full_user_message, history)
+    # Call configured AI provider
+    response = await call_ai_provider(full_system_message, full_user_message, history)
     
     # Save to chat history
     chat_entry = {
@@ -510,9 +537,10 @@ async def chat_with_elios(user_id: str, message: str, context: str = None, pilla
     return response
 
 async def analyze_form_response(pillar: str, question: str, answer: str) -> str:
-    """Analyze a form response and provide feedback using DeepSeek"""
+    """Analyze a form response and provide feedback using configured AI provider"""
     
-    if not DEEPSEEK_API_KEY:
+    provider = get_ai_provider_settings()
+    if not provider["api_key"]:
         return "Configure a API para habilitar análises."
     
     system_message = f"""Você é ELIOS, coach de alta performance, analisando a resposta de um usuário no formulário.
@@ -532,7 +560,7 @@ Tom: Direto, motivador, sem enrolação."""
     user_message = f"Resposta do usuário: {answer}"
     
     try:
-        response = await call_deepseek(system_message, user_message)
+        response = await call_ai_provider(system_message, user_message)
         return response
     except Exception as e:
         logger.error(f"Error analyzing response: {e}")
