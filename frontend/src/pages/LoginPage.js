@@ -47,14 +47,14 @@ const LoginPage = () => {
         <Card className="glass-card border-white/10">
           <CardHeader className="text-center">
             <CardTitle className="text-2xl text-white">Acesse sua conta</CardTitle>
-            <CardDescription className="text-slate-400">
+            <CardDescription className="text-neutral-500">
               Entre com suas credenciais para continuar
             </CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="email" className="text-slate-400 uppercase text-xs tracking-wide">
+                <Label htmlFor="email" className="text-neutral-500 uppercase text-xs tracking-wide">
                   Email
                 </Label>
                 <Input
@@ -64,13 +64,13 @@ const LoginPage = () => {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
-                  className="bg-slate-900/50 border-slate-700 text-white placeholder:text-slate-500 h-12"
+                  className="bg-neutral-900/50 border-neutral-800 text-white placeholder:text-neutral-600 h-12"
                   data-testid="login-email"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="password" className="text-slate-400 uppercase text-xs tracking-wide">
+                <Label htmlFor="password" className="text-neutral-500 uppercase text-xs tracking-wide">
                   Senha
                 </Label>
                 <div className="relative">
@@ -81,13 +81,13 @@ const LoginPage = () => {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
-                    className="bg-slate-900/50 border-slate-700 text-white placeholder:text-slate-500 h-12 pr-12"
+                    className="bg-neutral-900/50 border-neutral-800 text-white placeholder:text-neutral-600 h-12 pr-12"
                     data-testid="login-password"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white transition-colors"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-white transition-colors"
                   >
                     {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                   </button>
@@ -112,13 +112,13 @@ const LoginPage = () => {
             </form>
 
             <div className="mt-6 pt-6 border-t border-white/10 text-center">
-              <p className="text-slate-400 text-sm mb-4">
+              <p className="text-neutral-500 text-sm mb-4">
                 Ainda não tem conta?
               </p>
               <Button
                 variant="outline"
                 onClick={() => navigate('/form')}
-                className="w-full border-primary/50 text-primary hover:bg-primary/10"
+                className="w-full border-white/30 text-white hover:bg-white/10"
                 data-testid="register-link"
               >
                 <UserPlus className="mr-2" size={18} />
@@ -129,7 +129,7 @@ const LoginPage = () => {
         </Card>
 
         {/* Footer */}
-        <p className="text-center text-slate-500 text-sm mt-8">
+        <p className="text-center text-neutral-600 text-sm mt-8">
           HUTOO EDUCAÇÃO © {new Date().getFullYear()} - Programa Elite
         </p>
       </div>

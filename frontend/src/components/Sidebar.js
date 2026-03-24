@@ -50,8 +50,8 @@ const Sidebar = () => {
         onClick={() => setMobileOpen(false)}
         className={`flex items-center gap-3 px-4 py-3 rounded-sm transition-all duration-200 ${
           isActive 
-            ? 'sidebar-active bg-primary/10 text-primary' 
-            : 'text-slate-400 hover:text-white hover:bg-white/5'
+            ? 'sidebar-active bg-white/5 text-white' 
+            : 'text-neutral-500 hover:text-white hover:bg-white/5'
         }`}
         data-testid={`nav-${item.path.replace('/', '')}`}
       >
@@ -71,10 +71,10 @@ const Sidebar = () => {
       {/* User Info */}
       <div className="p-4 border-b border-white/5">
         <div className="glass-card rounded-lg p-3">
-          <p className="text-sm text-slate-400">Bem-vindo,</p>
+          <p className="text-sm text-neutral-500">Bem-vindo,</p>
           <p className="text-white font-semibold truncate">{user?.full_name}</p>
           <span className={`inline-block mt-2 px-2 py-0.5 text-xs rounded-full ${
-            isAdmin() ? 'bg-primary/20 text-primary' : 'bg-accent/20 text-accent'
+            isAdmin() ? 'bg-white/10 text-white' : 'bg-amber-500/20 text-amber-400'
           }`}>
             {user?.role}
           </span>
@@ -133,7 +133,7 @@ const Sidebar = () => {
 
       {/* Sidebar */}
       <aside 
-        className={`fixed left-0 top-0 h-full w-64 bg-slate-950/95 border-r border-white/5 backdrop-blur-lg z-50 
+        className={`fixed left-0 top-0 h-full w-64 bg-black/95 border-r border-white/5 backdrop-blur-lg z-50 
           transform transition-transform duration-300 md:translate-x-0
           ${mobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}
       >

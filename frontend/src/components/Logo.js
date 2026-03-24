@@ -16,12 +16,12 @@ const Logo = ({ size = 'md', showText = true }) => {
       <div className="relative logo-shield">
         <Shield 
           size={icon} 
-          className="text-primary fill-primary/20" 
+          className="text-white fill-white/10" 
           strokeWidth={1.5}
         />
         <Swords 
           size={icon * 0.5} 
-          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-primary"
+          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-white"
           strokeWidth={1.5}
         />
       </div>
@@ -31,7 +31,7 @@ const Logo = ({ size = 'md', showText = true }) => {
             ELIOS
           </span>
           {size !== 'sm' && (
-            <span className="text-xs text-slate-400 tracking-widest uppercase">
+            <span className="text-xs text-neutral-500 tracking-widest uppercase">
               Performance Elite
             </span>
           )}

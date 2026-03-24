@@ -6,27 +6,27 @@
 
 @layer base {
     :root {
-        --background: 216 50% 10%;
-        --foreground: 210 40% 98%;
-        --card: 217 43% 16%;
-        --card-foreground: 210 40% 98%;
-        --popover: 217 43% 16%;
-        --popover-foreground: 210 40% 98%;
-        --primary: 199 89% 48%;
-        --primary-foreground: 222 47% 11%;
-        --secondary: 217 33% 17%;
-        --secondary-foreground: 210 40% 98%;
-        --muted: 217 33% 17%;
-        --muted-foreground: 215 20% 65%;
-        --accent: 38 92% 50%;
-        --accent-foreground: 222 47% 11%;
+        --background: 0 0% 5%;
+        --foreground: 0 0% 98%;
+        --card: 0 0% 8%;
+        --card-foreground: 0 0% 98%;
+        --popover: 0 0% 8%;
+        --popover-foreground: 0 0% 98%;
+        --primary: 0 0% 98%;
+        --primary-foreground: 0 0% 5%;
+        --secondary: 0 0% 12%;
+        --secondary-foreground: 0 0% 98%;
+        --muted: 0 0% 12%;
+        --muted-foreground: 0 0% 65%;
+        --accent: 0 0% 98%;
+        --accent-foreground: 0 0% 5%;
         --destructive: 0 84% 60%;
-        --destructive-foreground: 210 40% 98%;
-        --border: 217 33% 17%;
-        --input: 217 33% 17%;
-        --ring: 199 89% 48%;
+        --destructive-foreground: 0 0% 98%;
+        --border: 0 0% 15%;
+        --input: 0 0% 12%;
+        --ring: 0 0% 98%;
         --radius: 0.5rem;
-        --chart-1: 199 89% 48%;
+        --chart-1: 0 0% 98%;
         --chart-2: 38 92% 50%;
         --chart-3: 142 71% 45%;
         --chart-4: 280 65% 60%;
@@ -46,7 +46,7 @@
     body {
         @apply bg-background text-foreground antialiased;
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-        background-color: #0a1628;
+        background-color: #0d0d0d;
     }
     
     h1, h2, h3, h4, h5, h6 {
@@ -63,36 +63,36 @@
 }
 
 ::-webkit-scrollbar-track {
-    background: #0a1628;
+    background: #0d0d0d;
 }
 
 ::-webkit-scrollbar-thumb {
-    background: #1e293b;
+    background: #1f1f1f;
     border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: #334155;
+    background: #2a2a2a;
 }
 
 /* Glass effect */
 .glass {
-    background: rgba(17, 34, 64, 0.6);
+    background: rgba(20, 20, 20, 0.8);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .glass-card {
-    background: rgba(17, 34, 64, 0.5);
+    background: rgba(18, 18, 18, 0.9);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 /* Neon glow effects */
 .neon-glow {
-    box-shadow: 0 0 20px rgba(14, 165, 233, 0.3);
+    box-shadow: 0 0 20px rgba(255, 255, 255, 0.15);
 }
 
 .neon-glow-gold {
@@ -100,24 +100,24 @@
 }
 
 .neon-text {
-    text-shadow: 0 0 10px rgba(14, 165, 233, 0.5);
+    text-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
 }
 
 /* Button hover effects */
 .btn-primary {
-    @apply bg-primary text-primary-foreground font-medium uppercase tracking-wider;
+    @apply bg-white text-black font-medium uppercase tracking-wider;
     transition: all 0.3s ease;
 }
 
 .btn-primary:hover {
-    box-shadow: 0 0 20px rgba(14, 165, 233, 0.5);
+    box-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
     transform: translateY(-1px);
 }
 
 /* Sidebar active state */
 .sidebar-active {
-    background: linear-gradient(90deg, rgba(14, 165, 233, 0.2) 0%, transparent 100%);
-    border-left: 3px solid #0ea5e9;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.1) 0%, transparent 100%);
+    border-left: 3px solid #ffffff;
 }
 
 /* Form input focus */
@@ -132,17 +132,17 @@ input:focus, textarea:focus, select:focus {
 }
 
 .card-hover:hover {
-    border-color: rgba(14, 165, 233, 0.5);
+    border-color: rgba(255, 255, 255, 0.2);
     transform: translateY(-2px);
 }
 
 /* Radar chart custom styles */
 .recharts-polar-grid-angle line {
-    stroke: #334155 !important;
+    stroke: #2a2a2a !important;
 }
 
 .recharts-polar-grid-concentric circle {
-    stroke: #334155 !important;
+    stroke: #2a2a2a !important;
 }
 
 /* Progress bar animation */
@@ -161,8 +161,8 @@ input:focus, textarea:focus, select:focus {
 
 /* Step indicator */
 .step-active {
-    background: linear-gradient(135deg, #0ea5e9 0%, #3b82f6 100%);
-    box-shadow: 0 0 15px rgba(14, 165, 233, 0.5);
+    background: linear-gradient(135deg, #ffffff 0%, #e0e0e0 100%);
+    box-shadow: 0 0 15px rgba(255, 255, 255, 0.3);
 }
 
 .step-completed {
@@ -197,6 +197,7 @@ input:focus, textarea:focus, select:focus {
 
 .typing-dot {
     animation: typing 1.4s infinite;
+    background-color: #ffffff;
 }
 
 .typing-dot:nth-child(2) {
@@ -255,15 +256,15 @@ input:focus, textarea:focus, select:focus {
 }
 
 /* Pillar card colors */
-.pillar-espiritualidade { border-left-color: #8b5cf6; }
+.pillar-espiritualidade { border-left-color: #a0a0a0; }
 .pillar-saude { border-left-color: #10b981; }
 .pillar-emocional { border-left-color: #f59e0b; }
 .pillar-lazer { border-left-color: #ec4899; }
-.pillar-tempo { border-left-color: #3b82f6; }
-.pillar-intelectual { border-left-color: #6366f1; }
+.pillar-tempo { border-left-color: #6b7280; }
+.pillar-intelectual { border-left-color: #8b5cf6; }
 .pillar-imagem { border-left-color: #14b8a6; }
 .pillar-familia { border-left-color: #f43f5e; }
-.pillar-profissional { border-left-color: #0ea5e9; }
+.pillar-profissional { border-left-color: #ffffff; }
 .pillar-financas { border-left-color: #22c55e; }
 .pillar-networking { border-left-color: #a855f7; }
 .pillar-magnus { border-left-color: #f59e0b; }

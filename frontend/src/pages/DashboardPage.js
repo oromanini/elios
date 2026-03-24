@@ -97,8 +97,8 @@ const DashboardPage = () => {
                     {stats?.total_goals || 0}
                   </p>
                 </div>
-                <div className="w-12 h-12 rounded-lg bg-primary/20 flex items-center justify-center">
-                  <Target className="text-primary" size={24} />
+                  <div className="w-12 h-12 rounded-lg bg-white/10 flex items-center justify-center">
+                  <Target className="text-white" size={24} />
                 </div>
               </div>
             </CardContent>
@@ -129,8 +129,8 @@ const DashboardPage = () => {
                     {Object.keys(stats?.pillars || {}).length}
                   </p>
                 </div>
-                <div className="w-12 h-12 rounded-lg bg-accent/20 flex items-center justify-center">
-                  <Hexagon className="text-accent" size={24} />
+                <div className="w-12 h-12 rounded-lg bg-amber-500/20 flex items-center justify-center">
+                  <Hexagon className="text-amber-400" size={24} />
                 </div>
               </div>
             </CardContent>
@@ -161,7 +161,7 @@ const DashboardPage = () => {
           <Card className="glass-card border-white/10 lg:col-span-8">
             <CardHeader>
               <CardTitle className="text-xl text-white flex items-center gap-2">
-                <Hexagon className="text-primary" size={20} />
+                <Hexagon className="text-white" size={20} />
                 Visão dos 11 Pilares + Meta Magnus
               </CardTitle>
             </CardHeader>
@@ -182,9 +182,9 @@ const DashboardPage = () => {
                     <Radar
                       name="Progresso"
                       dataKey="progress"
-                      stroke="#0ea5e9"
-                      fill="#0ea5e9"
-                      fillOpacity={0.3}
+                      stroke="#ffffff"
+                      fill="#ffffff"
+                      fillOpacity={0.15}
                       strokeWidth={2}
                     />
                     <Tooltip
@@ -194,8 +194,8 @@ const DashboardPage = () => {
                           return (
                             <div className="glass-card rounded-lg p-3 border border-white/10">
                               <p className="text-white font-medium">{data.pillar}</p>
-                              <p className="text-primary">Progresso: {data.progress}%</p>
-                              <p className="text-slate-400 text-sm">
+                              <p className="text-white">Progresso: {data.progress}%</p>
+                              <p className="text-neutral-400 text-sm">
                                 {data.completed}/{data.goals} metas concluídas
                               </p>
                             </div>
@@ -219,7 +219,7 @@ const DashboardPage = () => {
               <CardContent className="space-y-3">
                 <Button
                   variant="secondary"
-                  className="w-full justify-between bg-slate-800/50 hover:bg-slate-800 border border-white/5"
+                  className="w-full justify-between bg-neutral-900/50 hover:bg-neutral-800 border border-white/5"
                   onClick={() => navigate('/pilares')}
                   data-testid="view-pillars-btn"
                 >
@@ -232,7 +232,7 @@ const DashboardPage = () => {
                 
                 <Button
                   variant="secondary"
-                  className="w-full justify-between bg-slate-800/50 hover:bg-slate-800 border border-white/5"
+                  className="w-full justify-between bg-neutral-900/50 hover:bg-neutral-800 border border-white/5"
                   onClick={() => navigate('/metas')}
                   data-testid="manage-goals-btn"
                 >
@@ -245,7 +245,7 @@ const DashboardPage = () => {
                 
                 <Button
                   variant="secondary"
-                  className="w-full justify-between bg-slate-800/50 hover:bg-slate-800 border border-white/5"
+                  className="w-full justify-between bg-neutral-900/50 hover:bg-neutral-800 border border-white/5"
                   onClick={() => navigate('/chat')}
                   data-testid="chat-elios-btn"
                 >
@@ -259,19 +259,19 @@ const DashboardPage = () => {
             </Card>
 
             {/* META MAGNUS Highlight */}
-            <Card className="glass-card border-accent/30 neon-glow-gold">
+            <Card className="glass-card border-amber-500/30 neon-glow-gold">
               <CardHeader className="pb-2">
-                <CardTitle className="text-lg text-accent flex items-center gap-2">
+                <CardTitle className="text-lg text-amber-400 flex items-center gap-2">
                   🎯 META MAGNUS
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 {responses.find(r => r.question?.pillar === 'META MAGNUS') ? (
-                  <p className="text-slate-300 text-sm line-clamp-4">
+                  <p className="text-neutral-300 text-sm line-clamp-4">
                     {responses.find(r => r.question?.pillar === 'META MAGNUS')?.answer}
                   </p>
                 ) : (
-                  <p className="text-slate-500 text-sm italic">
+                  <p className="text-neutral-500 text-sm italic">
                     Nenhuma Meta Magnus definida ainda.
                   </p>
                 )}
