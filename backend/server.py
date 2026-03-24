@@ -17,7 +17,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import secrets
 import string
-from emergentintegrations.llm.chat import LlmChat, UserMessage
+import httpx
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -32,8 +32,9 @@ JWT_SECRET = os.environ.get('JWT_SECRET', 'default-secret-key')
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = 24
 
-# OpenAI Configuration
-OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
+# DeepSeek Configuration
+DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY', '')
+DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"
 
 # SMTP Configuration
 SMTP_HOST = os.environ.get('SMTP_HOST', 'smtp.hostinger.com')
@@ -56,6 +57,35 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Default ELIOS System Prompt
+DEFAULT_ELIOS_PROMPT = """Você é o ELIOS, uma Inteligência Artificial avançada atuando como Coach de Alta Performance Individual. 
+Sua missão é ajudar o usuário a alcançar a excelência equilibrando os 11 Pilares da Vida.
+
+OS 11 PILARES:
+1. ESPIRITUALIDADE - Fé, propósito de vida, visão de mundo
+2. CUIDADOS COM A SAÚDE - Exercícios, alimentação, saúde física
+3. EQUILÍBRIO EMOCIONAL - Saúde mental, gestão de emoções
+4. LAZER - Tempo de qualidade para descanso e diversão
+5. GESTÃO DO TEMPO E ORGANIZAÇÃO - Rotina, produtividade
+6. DESENVOLVIMENTO INTELECTUAL - Estudos, leitura, aprendizado
+7. IMAGEM PESSOAL - Vestimenta, postura, linguajar
+8. FAMÍLIA - Relacionamento com cônjuge e filhos
+9. CRESCIMENTO PROFISSIONAL - Carreira e desenvolvimento
+10. FINANÇAS - Gestão financeira, investimentos
+11. NETWORKING E CONTRIBUIÇÃO - Conexões e contribuição social
++ META MAGNUS - A maior e mais importante meta para os próximos 12 meses
+
+DIRETRIZES DE COMPORTAMENTO:
+1. Tom de Voz: Você é implacável com os resultados, mas profundamente empático com o processo humano. Seja direto, prático, encorajador e sem rodeios. Evite clichês motivacionais genéricos.
+2. Foco nos Dados: Suas respostas DEVEM ser ancoradas nas metas ativas do usuário. Nunca dê conselhos isolados se você puder conectá-los a uma meta que ele já possui.
+3. Visão Sistêmica: Entenda que os 11 pilares estão conectados. Se o usuário relatar estresse financeiro, avalie como isso pode estar impactando o pilar de saúde ou relacionamentos, e vice-versa.
+4. Estrutura de Resposta: 
+   - Valide o sentimento ou o obstáculo do usuário rapidamente.
+   - Analise a situação com base nas metas atuais dele.
+   - Entregue um plano de ação tático de 1 a 3 passos curtos para ele aplicar HOJE.
+5. Personalização: Use o nome do usuário quando apropriado. Referencie metas específicas dele.
+6. Linguagem: Fale em português brasileiro, de forma clara e profissional."""
 
 # ==================== MODELS ====================
 
@@ -142,6 +172,7 @@ class GoalResponse(BaseModel):
 class ChatMessage(BaseModel):
     message: str
     context: Optional[str] = None
+    pillar: Optional[str] = None
 
 class AIKnowledgeCreate(BaseModel):
     category: str
@@ -165,6 +196,9 @@ class AnalyzeResponseRequest(BaseModel):
 class PasswordChange(BaseModel):
     current_password: str
     new_password: str
+
+class SystemPromptUpdate(BaseModel):
+    prompt: str
 
 # ==================== HELPER FUNCTIONS ====================
 
@@ -231,16 +265,16 @@ def send_welcome_email(to_email: str, full_name: str, password: str):
         <html>
         <head>
             <style>
-                body {{ font-family: Arial, sans-serif; background-color: #0a1628; color: #f8fafc; }}
-                .container {{ max-width: 600px; margin: 0 auto; padding: 40px; background-color: #112240; border-radius: 10px; }}
+                body {{ font-family: Arial, sans-serif; background-color: #0d0d0d; color: #f8fafc; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 40px; background-color: #141414; border-radius: 10px; }}
                 .header {{ text-align: center; margin-bottom: 30px; }}
-                .logo {{ font-size: 32px; font-weight: bold; color: #0ea5e9; }}
-                .credentials {{ background-color: #1e293b; padding: 20px; border-radius: 8px; margin: 20px 0; }}
+                .logo {{ font-size: 32px; font-weight: bold; color: #ffffff; }}
+                .credentials {{ background-color: #1a1a1a; padding: 20px; border-radius: 8px; margin: 20px 0; }}
                 .field {{ margin: 10px 0; }}
-                .label {{ color: #94a3b8; font-size: 12px; text-transform: uppercase; }}
+                .label {{ color: #888888; font-size: 12px; text-transform: uppercase; }}
                 .value {{ color: #f8fafc; font-size: 18px; font-weight: bold; }}
                 .warning {{ background-color: #f59e0b20; border-left: 4px solid #f59e0b; padding: 15px; margin-top: 20px; }}
-                .footer {{ text-align: center; margin-top: 30px; color: #94a3b8; font-size: 12px; }}
+                .footer {{ text-align: center; margin-top: 30px; color: #666666; font-size: 12px; }}
             </style>
         </head>
         <body>
@@ -296,164 +330,213 @@ def send_welcome_email(to_email: str, full_name: str, password: str):
         logger.error(f"Failed to send email: {e}")
         return False
 
-# ==================== AI FUNCTIONS ====================
+# ==================== DEEPSEEK AI FUNCTIONS ====================
 
-async def get_elios_system_message(user_id: Optional[str] = None) -> str:
-    """Build ELIOS system message with knowledge base"""
+async def get_system_prompt() -> str:
+    """Get the system prompt from database or use default"""
+    config = await db.system_config.find_one({"key": "elios_prompt"}, {"_id": 0})
+    if config and config.get("value"):
+        return config["value"]
+    return DEFAULT_ELIOS_PROMPT
+
+async def build_user_context(user_id: str) -> str:
+    """Build comprehensive user context for ELIOS"""
+    context_parts = []
     
-    # Get AI knowledge from database
-    knowledge_docs = await db.ai_knowledge.find({"is_active": True}, {"_id": 0}).sort("priority", -1).to_list(100)
-    knowledge_text = "\n".join([f"- {doc['content']}" for doc in knowledge_docs])
+    # Get user info
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if user:
+        context_parts.append(f"USUÁRIO: {user.get('full_name', 'Desconhecido')}")
     
-    # Get user context if available
-    user_context = ""
-    if user_id:
-        user = await db.users.find_one({"id": user_id}, {"_id": 0})
-        if user:
-            user_context = f"\nUsuário atual: {user.get('full_name', 'Desconhecido')}"
+    # Get all questions for reference
+    questions = await db.questions.find({"is_active": True}, {"_id": 0}).to_list(100)
+    questions_map = {q["id"]: q for q in questions}
+    
+    # Get user's form responses organized by pillar
+    responses = await db.form_responses.find({"user_id": user_id}, {"_id": 0}).to_list(100)
+    pillar_responses = {}
+    for resp in responses:
+        question = questions_map.get(resp["question_id"])
+        if question:
+            pillar = question["pillar"]
+            pillar_responses[pillar] = {
+                "resposta_inicial": resp["answer"],
+                "data_preenchimento": resp.get("created_at", "N/A")
+            }
+    
+    # Get user's goals organized by pillar
+    goals = await db.goals.find({"user_id": user_id, "is_deleted": False}, {"_id": 0}).to_list(100)
+    pillar_goals = {}
+    for goal in goals:
+        pillar = goal["pillar"]
+        if pillar not in pillar_goals:
+            pillar_goals[pillar] = []
+        pillar_goals[pillar].append({
+            "titulo": goal["title"],
+            "descricao": goal["description"],
+            "status": goal["status"],
+            "data_limite": goal.get("target_date", "Sem prazo")
+        })
+    
+    # Build context for each pillar
+    context_parts.append("\n[DADOS DOS 11 PILARES DO USUÁRIO]")
+    
+    pillars_order = [
+        "ESPIRITUALIDADE", "CUIDADOS COM A SAÚDE", "EQUILÍBRIO EMOCIONAL",
+        "LAZER", "GESTÃO DO TEMPO E ORGANIZAÇÃO", "DESENVOLVIMENTO INTELECTUAL",
+        "IMAGEM PESSOAL", "FAMÍLIA", "CRESCIMENTO PROFISSIONAL",
+        "FINANÇAS", "NETWORKING E CONTRIBUIÇÃO", "META MAGNUS"
+    ]
+    
+    for pillar in pillars_order:
+        context_parts.append(f"\n📌 {pillar}:")
         
-        # Get user's form responses
-        responses = await db.form_responses.find({"user_id": user_id}, {"_id": 0}).to_list(100)
-        if responses:
-            user_context += "\n\nRespostas do formulário do usuário:"
-            for resp in responses:
-                question = await db.questions.find_one({"id": resp["question_id"]}, {"_id": 0})
-                if question:
-                    user_context += f"\n- {question['pillar']}: {resp['answer']}"
+        # Initial response
+        if pillar in pillar_responses:
+            resp_data = pillar_responses[pillar]
+            context_parts.append(f"   Resposta Inicial: {resp_data['resposta_inicial'][:500]}...")
+        else:
+            context_parts.append("   Resposta Inicial: Não preenchido")
         
-        # Get user's goals
-        goals = await db.goals.find({"user_id": user_id, "is_deleted": False}, {"_id": 0}).to_list(100)
-        if goals:
-            user_context += "\n\nMetas do usuário:"
-            for goal in goals:
-                user_context += f"\n- [{goal['pillar']}] {goal['title']}: {goal['description']}"
+        # Goals
+        if pillar in pillar_goals:
+            context_parts.append(f"   Metas Ativas ({len(pillar_goals[pillar])}):")
+            for goal in pillar_goals[pillar]:
+                status_emoji = "✅" if goal["status"] == "completed" else "🎯"
+                context_parts.append(f"      {status_emoji} {goal['titulo']} ({goal['status']})")
+                if goal["descricao"]:
+                    context_parts.append(f"         └─ {goal['descricao'][:200]}")
+        else:
+            context_parts.append("   Metas Ativas: Nenhuma meta definida")
     
-    system_message = f"""Você é ELIOS, o Assistente de Performance da Elite do programa HUTOO EDUCAÇÃO.
-
-Sua personalidade:
-- Você é um estrategista de alta performance, direto e motivador
-- Usa linguagem profissional mas acessível
-- Sempre busca ajudar o usuário a melhorar em seus 11 pilares de vida
-- Oferece sugestões práticas e acionáveis
-- Celebra conquistas e progresso
-- Quando necessário, desafia o usuário a pensar maior
-
-Os 11 Pilares + Meta Magnus que você trabalha:
-1. ESPIRITUALIDADE - Fé, propósito de vida, visão de mundo
-2. CUIDADOS COM A SAÚDE - Exercícios, alimentação, saúde física
-3. EQUILÍBRIO EMOCIONAL - Saúde mental, gestão de emoções
-4. LAZER - Tempo de qualidade para descanso e diversão
-5. GESTÃO DO TEMPO E ORGANIZAÇÃO - Rotina, produtividade
-6. DESENVOLVIMENTO INTELECTUAL - Estudos, leitura, aprendizado
-7. IMAGEM PESSOAL - Vestimenta, postura, linguajar
-8. FAMÍLIA - Relacionamento com cônjuge e filhos
-9. CRESCIMENTO PROFISSIONAL - Carreira e desenvolvimento
-10. FINANÇAS - Gestão financeira, investimentos
-11. NETWORKING E CONTRIBUIÇÃO - Conexões e contribuição social
-12. META MAGNUS - A maior meta para os próximos 12 meses
-
-Conhecimento adicional do programa:
-{knowledge_text}
-
-{user_context}
-
-Diretrizes de resposta:
-- Seja conciso mas completo
-- Ofereça no máximo 3 sugestões por vez
-- Use emojis com moderação para tornar a conversa mais amigável
-- Sempre relacione suas sugestões com os pilares quando relevante
-- Se o usuário compartilhar uma meta vaga, ajude a torná-la SMART (Específica, Mensurável, Alcançável, Relevante, Temporal)
-"""
+    # Add additional knowledge from admin
+    knowledge_docs = await db.ai_knowledge.find({"is_active": True}, {"_id": 0}).sort("priority", -1).to_list(50)
+    if knowledge_docs:
+        context_parts.append("\n[CONHECIMENTO ADICIONAL DO PROGRAMA ELITE]")
+        for doc in knowledge_docs:
+            context_parts.append(f"- [{doc['category']}] {doc['content']}")
     
-    return system_message
-
-async def analyze_form_response(pillar: str, question: str, answer: str) -> str:
-    """Analyze a form response and provide feedback"""
+    context_parts.append("\n[FIM DO CONTEXTO INJETADO PELO SISTEMA]")
     
-    if not OPENAI_API_KEY:
-        return "Configure a chave da API OpenAI para habilitar análises."
+    return "\n".join(context_parts)
+
+async def call_deepseek(system_message: str, user_message: str, history: List[dict] = None) -> str:
+    """Call DeepSeek API for chat completion"""
     
-    system_message = f"""Você é ELIOS, analisando a resposta de um usuário no formulário de performance.
-
-Pilar: {pillar}
-Pergunta: {question}
-
-Sua tarefa:
-1. Analisar se a resposta é específica e bem definida
-2. Se for vaga, sugerir como melhorar
-3. Se for boa, parabenizar brevemente
-4. Sugerir micro-objetivos se a meta for muito ambiciosa
-5. Manter resposta curta (máximo 2-3 frases)
-
-Tom: Motivador e direto. Use "Boa!" ou "Excelente!" para respostas boas.
-"""
+    if not DEEPSEEK_API_KEY:
+        return "Erro: Chave da API DeepSeek não configurada. Contate o administrador."
+    
+    messages = [{"role": "system", "content": system_message}]
+    
+    # Add conversation history (last 10 messages)
+    if history:
+        for msg in history[-10:]:
+            messages.append({"role": "user", "content": msg["user_message"]})
+            messages.append({"role": "assistant", "content": msg["assistant_message"]})
+    
+    messages.append({"role": "user", "content": user_message})
     
     try:
-        chat = LlmChat(
-            api_key=OPENAI_API_KEY,
-            session_id=f"form-analysis-{uuid.uuid4()}",
-            system_message=system_message
-        ).with_model("openai", "gpt-5.2")
-        
-        user_message = UserMessage(text=f"Resposta do usuário: {answer}")
-        response = await chat.send_message(user_message)
-        return response
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
+                f"{DEEPSEEK_BASE_URL}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "deepseek-chat",
+                    "messages": messages,
+                    "temperature": 0.7,
+                    "max_tokens": 1500
+                }
+            )
+            
+            if response.status_code != 200:
+                logger.error(f"DeepSeek API error: {response.status_code} - {response.text}")
+                return f"Erro na API: {response.status_code}. Tente novamente."
+            
+            data = response.json()
+            return data["choices"][0]["message"]["content"]
+            
+    except httpx.TimeoutException:
+        logger.error("DeepSeek API timeout")
+        return "A resposta demorou muito. Por favor, tente novamente."
     except Exception as e:
-        logger.error(f"Error analyzing response: {e}")
-        return "Não foi possível analisar sua resposta no momento."
+        logger.error(f"DeepSeek API error: {e}")
+        return f"Erro ao processar sua mensagem: {str(e)}"
 
-async def chat_with_elios(user_id: str, message: str, context: Optional[str] = None) -> str:
-    """Chat with ELIOS"""
+async def chat_with_elios(user_id: str, message: str, context: str = None, pillar: str = None) -> str:
+    """Main function to chat with ELIOS"""
     
-    if not OPENAI_API_KEY:
-        return "Configure a chave da API OpenAI para habilitar o chat."
+    # Get system prompt
+    system_prompt = await get_system_prompt()
     
-    system_message = await get_elios_system_message(user_id)
+    # Build user context
+    user_context = await build_user_context(user_id)
     
-    # Get chat history from database
+    # Combine system prompt with user context
+    full_system_message = f"{system_prompt}\n\n{user_context}"
+    
+    # Build user message with optional context
+    full_user_message = message
+    if pillar:
+        full_user_message = f"[Pergunta sobre o pilar: {pillar}]\n\n{message}"
+    if context:
+        full_user_message = f"[Contexto adicional: {context}]\n\n{full_user_message}"
+    
+    # Get chat history
     history = await db.chat_history.find(
         {"user_id": user_id},
         {"_id": 0}
     ).sort("created_at", -1).limit(10).to_list(10)
+    history.reverse()
     
-    history.reverse()  # Put in chronological order
+    # Call DeepSeek
+    response = await call_deepseek(full_system_message, full_user_message, history)
+    
+    # Save to chat history
+    chat_entry = {
+        "id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "user_message": message,
+        "assistant_message": response,
+        "context": context,
+        "pillar": pillar,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.chat_history.insert_one(chat_entry)
+    
+    return response
+
+async def analyze_form_response(pillar: str, question: str, answer: str) -> str:
+    """Analyze a form response and provide feedback using DeepSeek"""
+    
+    if not DEEPSEEK_API_KEY:
+        return "Configure a API para habilitar análises."
+    
+    system_message = f"""Você é ELIOS, coach de alta performance, analisando a resposta de um usuário no formulário.
+
+Pilar: {pillar}
+Pergunta: {question}
+
+REGRAS:
+1. Seja MUITO breve (máximo 2 frases)
+2. Se a resposta for vaga ou genérica, sugira ser mais específico
+3. Se a resposta for boa e específica, parabenize ("Boa!" ou "Excelente!")
+4. Se a meta for muito ambiciosa, sugira micro-objetivos
+5. Não repita a pergunta ou a resposta do usuário
+
+Tom: Direto, motivador, sem enrolação."""
+
+    user_message = f"Resposta do usuário: {answer}"
     
     try:
-        chat = LlmChat(
-            api_key=OPENAI_API_KEY,
-            session_id=f"elios-chat-{user_id}",
-            system_message=system_message
-        ).with_model("openai", "gpt-5.2")
-        
-        # Build context from history
-        context_text = ""
-        for msg in history:
-            context_text += f"\nUsuário: {msg['user_message']}\nELIOS: {msg['assistant_message']}"
-        
-        full_message = message
-        if context:
-            full_message = f"[Contexto: {context}]\n\n{message}"
-        if context_text:
-            full_message = f"Histórico recente da conversa:{context_text}\n\nNova mensagem do usuário: {full_message}"
-        
-        user_message = UserMessage(text=full_message)
-        response = await chat.send_message(user_message)
-        
-        # Save to chat history
-        chat_entry = {
-            "id": str(uuid.uuid4()),
-            "user_id": user_id,
-            "user_message": message,
-            "assistant_message": response,
-            "context": context,
-            "created_at": datetime.now(timezone.utc).isoformat()
-        }
-        await db.chat_history.insert_one(chat_entry)
-        
+        response = await call_deepseek(system_message, user_message)
         return response
     except Exception as e:
-        logger.error(f"Error chatting with ELIOS: {e}")
-        return "Desculpe, não consegui processar sua mensagem no momento. Tente novamente."
+        logger.error(f"Error analyzing response: {e}")
+        return ""
 
 # ==================== ROUTES ====================
 
@@ -859,7 +942,12 @@ async def analyze_response(data: AnalyzeResponseRequest):
 @api_router.post("/ai/chat")
 async def chat(data: ChatMessage, user: dict = Depends(get_current_user)):
     """Chat with ELIOS"""
-    response = await chat_with_elios(user["id"], data.message, data.context)
+    response = await chat_with_elios(
+        user["id"], 
+        data.message, 
+        data.context,
+        data.pillar
+    )
     return {"response": response}
 
 @api_router.get("/ai/chat/history")
@@ -910,6 +998,37 @@ async def delete_ai_knowledge(knowledge_id: str, admin: dict = Depends(get_admin
         raise HTTPException(status_code=404, detail="Conhecimento não encontrado")
     
     return {"message": "Conhecimento removido com sucesso"}
+
+# ---- SYSTEM PROMPT ROUTES (ADMIN) ----
+
+@api_router.get("/admin/ai/prompt")
+async def get_elios_prompt(admin: dict = Depends(get_admin_user)):
+    """Get the current ELIOS system prompt"""
+    prompt = await get_system_prompt()
+    return {"prompt": prompt, "is_default": prompt == DEFAULT_ELIOS_PROMPT}
+
+@api_router.put("/admin/ai/prompt")
+async def update_elios_prompt(data: SystemPromptUpdate, admin: dict = Depends(get_admin_user)):
+    """Update the ELIOS system prompt"""
+    await db.system_config.update_one(
+        {"key": "elios_prompt"},
+        {
+            "$set": {
+                "key": "elios_prompt",
+                "value": data.prompt,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "updated_by": admin["id"]
+            }
+        },
+        upsert=True
+    )
+    return {"message": "Prompt atualizado com sucesso"}
+
+@api_router.post("/admin/ai/prompt/reset")
+async def reset_elios_prompt(admin: dict = Depends(get_admin_user)):
+    """Reset ELIOS prompt to default"""
+    await db.system_config.delete_one({"key": "elios_prompt"})
+    return {"message": "Prompt resetado para o padrão", "prompt": DEFAULT_ELIOS_PROMPT}
 
 # ---- DASHBOARD ROUTES ----
 

@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { ScrollArea } from '../components/ui/scroll-area';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { aiAPI } from '../services/api';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
@@ -14,9 +15,26 @@ import {
   MessageSquare,
   Trash2,
   Sparkles,
-  User
+  User,
+  Hexagon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+
+const PILLARS = [
+  { id: 'GERAL', name: 'Geral (todos os pilares)', icon: '🎯' },
+  { id: 'ESPIRITUALIDADE', name: 'Espiritualidade', icon: '🙏' },
+  { id: 'CUIDADOS COM A SAÚDE', name: 'Saúde', icon: '💪' },
+  { id: 'EQUILÍBRIO EMOCIONAL', name: 'Emocional', icon: '🧘' },
+  { id: 'LAZER', name: 'Lazer', icon: '🎮' },
+  { id: 'GESTÃO DO TEMPO E ORGANIZAÇÃO', name: 'Tempo', icon: '⏰' },
+  { id: 'DESENVOLVIMENTO INTELECTUAL', name: 'Intelectual', icon: '📚' },
+  { id: 'IMAGEM PESSOAL', name: 'Imagem', icon: '✨' },
+  { id: 'FAMÍLIA', name: 'Família', icon: '👨‍👩‍👧‍👦' },
+  { id: 'CRESCIMENTO PROFISSIONAL', name: 'Profissional', icon: '📈' },
+  { id: 'FINANÇAS', name: 'Finanças', icon: '💰' },
+  { id: 'NETWORKING E CONTRIBUIÇÃO', name: 'Networking', icon: '🤝' },
+  { id: 'META MAGNUS', name: 'Meta Magnus', icon: '🏆' }
+];
 
 const ChatPage = () => {
   const { user } = useAuth();
@@ -25,6 +43,7 @@ const ChatPage = () => {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(true);
+  const [selectedPillar, setSelectedPillar] = useState('GERAL');
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -41,6 +60,7 @@ const ChatPage = () => {
   useEffect(() => {
     if (context) {
       setInput(`Quero conversar sobre o pilar: ${context}`);
+      setSelectedPillar(context);
       inputRef.current?.focus();
     }
   }, [context]);
@@ -75,7 +95,8 @@ const ChatPage = () => {
     try {
       const response = await aiAPI.chat({
         message: userMessage,
-        context: context
+        context: context,
+        pillar: selectedPillar === 'GERAL' ? null : selectedPillar
       });
 
       setMessages(prev => [...prev, { role: 'assistant', content: response.data.response }]);
@@ -114,23 +135,48 @@ const ChatPage = () => {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h1 className="text-2xl md:text-3xl font-bold text-white flex items-center gap-3">
-              <MessageSquare className="text-primary" />
+              <MessageSquare className="text-white" />
               ELIOS Chat
             </h1>
-            <p className="text-slate-400 text-sm mt-1">
-              Seu assistente de performance pessoal
+            <p className="text-neutral-500 text-sm mt-1">
+              Seu coach de alta performance individual
             </p>
           </div>
           <Button
             variant="ghost"
             size="sm"
             onClick={handleClearHistory}
-            className="text-slate-400 hover:text-red-400"
+            className="text-neutral-500 hover:text-red-400"
             data-testid="clear-history-btn"
           >
             <Trash2 size={16} className="mr-2" />
-            Limpar Histórico
+            Limpar
           </Button>
+        </div>
+
+        {/* Pillar Selector */}
+        <div className="mb-4">
+          <Select value={selectedPillar} onValueChange={setSelectedPillar}>
+            <SelectTrigger className="bg-neutral-900/50 border-neutral-800 text-white w-full md:w-72">
+              <div className="flex items-center gap-2">
+                <Hexagon size={16} />
+                <SelectValue placeholder="Selecione um pilar (opcional)" />
+              </div>
+            </SelectTrigger>
+            <SelectContent className="bg-neutral-900 border-neutral-800">
+              {PILLARS.map(pillar => (
+                <SelectItem key={pillar.id} value={pillar.id} className="text-white">
+                  <span className="flex items-center gap-2">
+                    <span>{pillar.icon}</span>
+                    {pillar.name}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-neutral-600 text-xs mt-1">
+            Selecione um pilar para focar a conversa ou deixe em "Geral" para falar sobre qualquer assunto.
+          </p>
         </div>
 
         {/* Chat Container */}
@@ -149,18 +195,18 @@ const ChatPage = () => {
                 <h3 className="text-xl font-semibold text-white mb-2">
                   Olá, {user?.full_name?.split(' ')[0]}!
                 </h3>
-                <p className="text-slate-400 max-w-md">
-                  Sou ELIOS, seu assistente de performance. Como posso ajudá-lo hoje?
-                  Podemos conversar sobre seus pilares, metas ou estratégias de crescimento.
+                <p className="text-neutral-400 max-w-md">
+                  Sou ELIOS, seu coach de alta performance. Estou aqui para ajudá-lo a evoluir nos 11 pilares da sua vida.
+                  Como posso ajudá-lo hoje?
                 </p>
                 <div className="flex flex-wrap justify-center gap-2 mt-6">
-                  {['Como melhorar minhas finanças?', 'Me ajude com gestão do tempo', 'Quero definir novas metas'].map((suggestion) => (
+                  {['Como posso melhorar minhas finanças?', 'Preciso de ajuda com gestão do tempo', 'Quero revisar minhas metas'].map((suggestion) => (
                     <Button
                       key={suggestion}
                       variant="outline"
                       size="sm"
                       onClick={() => setInput(suggestion)}
-                      className="border-primary/30 text-primary hover:bg-primary/10"
+                      className="border-white/20 text-white hover:bg-white/10"
                     >
                       {suggestion}
                     </Button>
@@ -187,20 +233,20 @@ const ChatPage = () => {
                         <div className="flex items-start gap-3">
                           <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
                             message.role === 'user' 
-                              ? 'bg-accent/20' 
-                              : 'bg-primary/20'
+                              ? 'bg-amber-500/20' 
+                              : 'bg-white/10'
                           }`}>
                             {message.role === 'user' ? (
-                              <User size={16} className="text-accent" />
+                              <User size={16} className="text-amber-400" />
                             ) : (
-                              <Sparkles size={16} className="text-primary" />
+                              <Sparkles size={16} className="text-white" />
                             )}
                           </div>
                           <div className="flex-1">
-                            <p className="text-xs text-slate-500 mb-1">
+                            <p className="text-xs text-neutral-500 mb-1">
                               {message.role === 'user' ? 'Você' : 'ELIOS'}
                             </p>
-                            <p className="text-slate-200 whitespace-pre-wrap">
+                            <p className="text-neutral-200 whitespace-pre-wrap">
                               {message.content}
                             </p>
                           </div>
@@ -219,11 +265,11 @@ const ChatPage = () => {
                     <div className="ai-message rounded-lg p-4">
                       <div className="flex items-center gap-2">
                         <div className="flex gap-1">
-                          <span className="w-2 h-2 bg-primary rounded-full typing-dot" />
-                          <span className="w-2 h-2 bg-primary rounded-full typing-dot" />
-                          <span className="w-2 h-2 bg-primary rounded-full typing-dot" />
+                          <span className="w-2 h-2 bg-white rounded-full typing-dot" />
+                          <span className="w-2 h-2 bg-white rounded-full typing-dot" />
+                          <span className="w-2 h-2 bg-white rounded-full typing-dot" />
                         </div>
-                        <span className="text-slate-400 text-sm">ELIOS está digitando...</span>
+                        <span className="text-neutral-400 text-sm">ELIOS está pensando...</span>
                       </div>
                     </div>
                   </motion.div>
@@ -235,15 +281,15 @@ const ChatPage = () => {
           </ScrollArea>
 
           {/* Input Area */}
-          <div className="p-4 border-t border-white/10 bg-slate-900/50">
+          <div className="p-4 border-t border-white/10 bg-neutral-900/50">
             <div className="flex gap-3">
               <Input
                 ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyPress={handleKeyPress}
-                placeholder="Digite sua mensagem..."
-                className="flex-1 bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500 h-12"
+                placeholder={selectedPillar !== 'GERAL' ? `Pergunte sobre ${PILLARS.find(p => p.id === selectedPillar)?.name || 'o pilar'}...` : "Digite sua mensagem..."}
+                className="flex-1 bg-neutral-800/50 border-neutral-700 text-white placeholder:text-neutral-500 h-12"
                 disabled={loading}
                 data-testid="chat-input"
               />
