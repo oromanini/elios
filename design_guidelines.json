@@ -1,0 +1,155 @@
+{
+  "project_name": "Sistema ELIOS",
+  "design_philosophy": {
+    "theme": "The Commander's HUD",
+    "core_concept": "A high-performance cockpit for personal growth. Precision, authority, and futuristic clarity.",
+    "emotional_tone": "Elite, Focused, Futuristic, Authoritative (Iron Man JARVIS vibe)",
+    "visual_style": "Dark Navy Glassmorphism with Neon Accents"
+  },
+  "typography": {
+    "font_family": {
+      "heading": "Rajdhani, Orbitron, sans-serif",
+      "body": "Inter, Manrope, sans-serif",
+      "mono": "JetBrains Mono, monospace"
+    },
+    "scale": {
+      "h1": "text-4xl md:text-6xl font-bold tracking-tight uppercase",
+      "h2": "text-3xl md:text-4xl font-semibold tracking-tight",
+      "h3": "text-2xl font-medium",
+      "body": "text-base leading-relaxed text-slate-300",
+      "small": "text-sm text-slate-400"
+    },
+    "installation": "Import 'Rajdhani' and 'Inter' from Google Fonts in index.css"
+  },
+  "colors": {
+    "palette": {
+      "background": "#0a1628",
+      "foreground": "#f8fafc",
+      "primary": "#0ea5e9",
+      "primary_foreground": "#0f172a",
+      "secondary": "#1e293b",
+      "secondary_foreground": "#f8fafc",
+      "accent": "#f59e0b",
+      "accent_foreground": "#0f172a",
+      "destructive": "#ef4444",
+      "muted": "#1e293b",
+      "muted_foreground": "#94a3b8",
+      "card": "#112240",
+      "card_foreground": "#f8fafc",
+      "border": "#1e293b",
+      "input": "#1e293b",
+      "ring": "#0ea5e9"
+    },
+    "gradients": {
+      "primary_glow": "bg-gradient-to-r from-sky-500 to-blue-600",
+      "gold_glow": "bg-gradient-to-r from-amber-400 to-orange-500",
+      "glass": "bg-slate-900/60 backdrop-blur-xl border border-white/10"
+    },
+    "semantic": {
+      "success": "#10b981",
+      "warning": "#f59e0b",
+      "error": "#ef4444",
+      "info": "#3b82f6"
+    }
+  },
+  "layout_grid": {
+    "container": "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8",
+    "dashboard": "grid grid-cols-1 md:grid-cols-12 gap-6",
+    "bento_grid": {
+      "hero": "col-span-12 md:col-span-8 row-span-2",
+      "sidebar": "col-span-12 md:col-span-4 row-span-2",
+      "stat_card": "col-span-6 md:col-span-3 lg:col-span-3"
+    }
+  },
+  "components": {
+    "buttons": {
+      "primary": "bg-primary text-primary-foreground hover:bg-primary/90 shadow-[0_0_15px_rgba(14,165,233,0.5)] rounded-sm font-medium transition-all duration-300 uppercase tracking-wider",
+      "secondary": "bg-secondary text-secondary-foreground hover:bg-secondary/80 rounded-sm font-medium border border-white/10",
+      "outline": "border-2 border-primary text-primary hover:bg-primary/10 rounded-sm uppercase tracking-wider",
+      "ghost": "hover:bg-white/5 text-foreground rounded-sm"
+    },
+    "cards": {
+      "base": "bg-card/50 backdrop-blur-md border border-white/10 rounded-lg shadow-xl overflow-hidden relative group",
+      "hover_effect": "hover:border-primary/50 transition-colors duration-300",
+      "glass": "bg-slate-900/40 backdrop-blur-xl border border-white/10"
+    },
+    "inputs": {
+      "base": "bg-slate-900/50 border-slate-700 text-white placeholder:text-slate-500 focus:ring-2 focus:ring-primary focus:border-transparent rounded-sm h-12",
+      "label": "text-sm font-medium text-slate-400 mb-1.5 block uppercase tracking-wide"
+    },
+    "navigation": {
+      "sidebar": "fixed left-0 top-0 h-full w-64 bg-slate-950/90 border-r border-white/5 backdrop-blur-lg z-50",
+      "header": "sticky top-0 z-40 w-full bg-background/80 backdrop-blur-md border-b border-white/5"
+    }
+  },
+  "visual_enhancers": {
+    "shadows": {
+      "neon": "shadow-[0_0_20px_rgba(14,165,233,0.3)]",
+      "gold": "shadow-[0_0_20px_rgba(245,158,11,0.3)]"
+    },
+    "borders": {
+      "glow": "border border-primary/50",
+      "subtle": "border border-white/10"
+    },
+    "effects": {
+      "scanline": "background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0) 50%, rgba(0,0,0,0.2) 50%, rgba(0,0,0,0.2)); background-size: 100% 4px;",
+      "hologram": "opacity-80 mix-blend-screen"
+    }
+  },
+  "image_urls": {
+    "robot_avatar": "https://images.pexels.com/photos/8566524/pexels-photo-8566524.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+    "robot_assistant": "https://images.pexels.com/photos/8566474/pexels-photo-8566474.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+    "background_texture": "https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=2072&auto=format&fit=crop",
+    "logo_placeholder": "Use a Shield Icon with Swords from Lucide React (Shield + Swords)"
+  },
+  "icon_system": {
+    "library": "lucide-react",
+    "style": "stroke-1.5",
+    "mapping": {
+      "dashboard": "LayoutDashboard",
+      "pillars": "Hexagon",
+      "chat": "MessageSquare",
+      "goals": "Target",
+      "users": "Users",
+      "settings": "Settings",
+      "admin": "ShieldAlert",
+      "logout": "LogOut"
+    }
+  },
+  "charts": {
+    "library": "recharts",
+    "theme": {
+      "radar": {
+        "stroke": "#0ea5e9",
+        "fill": "#0ea5e9",
+        "fillOpacity": 0.3,
+        "grid": "#334155"
+      },
+      "bar": {
+        "fill": "#0ea5e9",
+        "radius": [4, 4, 0, 0]
+      }
+    }
+  },
+  "instructions_to_main_agent": [
+    "1. SETUP: Install 'lucide-react', 'recharts', 'framer-motion', 'clsx', 'tailwind-merge'.",
+    "2. THEME: Update 'tailwind.config.js' with the color palette provided in 'colors'. Use HSL values if necessary for Shadcn compatibility.",
+    "3. FONTS: Add 'Rajdhani' (headings) and 'Inter' (body) to 'index.html' via Google Fonts.",
+    "4. LAYOUT: Implement a Sidebar Layout for the authenticated area. The Sidebar should be collapsible on mobile.",
+    "5. DASHBOARD: The main view is a Bento Grid. The centerpiece is the Radar Chart showing the 11 pillars.",
+    "6. FORM: The 12-step form must feel like a 'System Calibration'. Use a progress bar at the top. Each step transitions smoothly (framer-motion AnimatePresence).",
+    "7. CHAT: The ELIOS chat should be a floating drawer or a dedicated page. Messages should look like a terminal log or futuristic chat bubbles.",
+    "8. ADMIN: The Admin panel needs a 'Data Grid' for users. Use a table component with sorting/filtering.",
+    "9. ACCESS: Ensure 'data-testid' attributes are on all interactive elements.",
+    "10. LOGO: Create a component <Logo /> using Lucide icons (Shield + Swords) or an SVG. Do not use external images for the logo to avoid broken links."
+  ],
+  "universal_guidelines": [
+    "Do not use gradients for dark backgrounds; use solid dark colors or subtle noise textures.",
+    "Avoid centering text in main content areas; left-align for readability.",
+    "Use pill-shaped or slightly rounded buttons (rounded-sm) for a technical feel.",
+    "Add 'backdrop-blur' to all floating elements (modals, dropdowns, sticky headers).",
+    "Ensure high contrast for text (Slate-300 on Slate-900).",
+    "Use 'recharts' for all data visualization.",
+    "Use 'sonner' for toast notifications."
+  ]
+}
