@@ -7,7 +7,7 @@ Sistema de gerenciamento de membros para o programa de performance Elite da HUTO
 - **Frontend**: React + Tailwind CSS + Shadcn/UI + Framer Motion
 - **Backend**: FastAPI + Motor (MongoDB async)
 - **Database**: MongoDB
-- **AI**: OpenAI GPT-5.2 via emergentintegrations
+- **AI**: Provedor configurável (DeepSeek/Groq) via API compatível com OpenAI
 - **Email**: Hostinger SMTP
 
 ## User Personas
