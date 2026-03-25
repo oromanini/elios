@@ -32,12 +32,7 @@ JWT_SECRET = os.environ.get('JWT_SECRET', 'default-secret-key')
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = 24
 
-# AI Provider Configuration
-AI_PROVIDER = os.environ.get('AI_PROVIDER', 'deepseek').lower()
-DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY', '')
-DEEPSEEK_BASE_URL = os.environ.get('DEEPSEEK_BASE_URL', 'https://api.deepseek.com/v1')
-DEEPSEEK_MODEL = os.environ.get('DEEPSEEK_MODEL', 'deepseek-chat')
-
+# AI Configuration (Groq only)
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY', '')
 GROQ_BASE_URL = os.environ.get('GROQ_BASE_URL', 'https://api.groq.com/openai/v1')
 GROQ_MODEL = os.environ.get('GROQ_MODEL', 'llama-3.3-70b-versatile')
@@ -336,7 +331,7 @@ def send_welcome_email(to_email: str, full_name: str, password: str):
         logger.error(f"Failed to send email: {e}")
         return False
 
-# ==================== DEEPSEEK AI FUNCTIONS ====================
+# ==================== AI FUNCTIONS ====================
 
 async def get_system_prompt() -> str:
     """Get the system prompt from database or use default"""
@@ -427,22 +422,13 @@ async def build_user_context(user_id: str) -> str:
     return "\n".join(context_parts)
 
 def get_ai_provider_settings() -> Dict[str, str]:
-    """Return provider settings based on AI_PROVIDER env var."""
-    providers = {
-        "deepseek": {
-            "api_key": DEEPSEEK_API_KEY,
-            "base_url": DEEPSEEK_BASE_URL,
-            "model": DEEPSEEK_MODEL,
-            "name": "DeepSeek"
-        },
-        "groq": {
-            "api_key": GROQ_API_KEY,
-            "base_url": GROQ_BASE_URL,
-            "model": GROQ_MODEL,
-            "name": "Groq"
-        }
+    """Return Groq provider settings."""
+    return {
+        "api_key": GROQ_API_KEY,
+        "base_url": GROQ_BASE_URL,
+        "model": GROQ_MODEL,
+        "name": "Groq"
     }
-    return providers.get(AI_PROVIDER, providers["deepseek"])
 
 async def call_ai_provider(system_message: str, user_message: str, history: List[dict] = None) -> str:
     """Call configured AI provider for chat completion using OpenAI-compatible API."""

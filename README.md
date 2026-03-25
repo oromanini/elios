@@ -15,10 +15,7 @@ Plataforma com:
 
 ## IA (ELIOS + Groq)
 
-O backend agora suporta provedor configurável por ambiente:
-
-- `AI_PROVIDER=deepseek` (padrão)
-- `AI_PROVIDER=groq`
+O backend usa Groq como provedor padrão de IA.
 
 Variáveis relevantes:
 
