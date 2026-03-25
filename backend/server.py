@@ -17,7 +17,8 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import secrets
 import string
-import httpx
+import asyncio
+import requests
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -448,31 +449,32 @@ async def call_ai_provider(system_message: str, user_message: str, history: List
     messages.append({"role": "user", "content": user_message})
     
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(
-                f"{provider['base_url']}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {provider['api_key']}",
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "model": provider["model"],
-                    "messages": messages,
-                    "temperature": 0.7,
-                    "max_tokens": 1500
-                }
+        response = await asyncio.to_thread(
+            requests.post,
+            f"{provider['base_url']}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {provider['api_key']}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": provider["model"],
+                "messages": messages,
+                "temperature": 0.7,
+                "max_tokens": 1500
+            },
+            timeout=60
+        )
+
+        if response.status_code != 200:
+            logger.error(
+                f"{provider['name']} API error: {response.status_code} - {response.text}"
             )
-            
-            if response.status_code != 200:
-                logger.error(
-                    f"{provider['name']} API error: {response.status_code} - {response.text}"
-                )
-                return f"Erro na API: {response.status_code}. Tente novamente."
-            
-            data = response.json()
-            return data["choices"][0]["message"]["content"]
-            
-    except httpx.TimeoutException:
+            return f"Erro na API: {response.status_code}. Tente novamente."
+
+        data = response.json()
+        return data["choices"][0]["message"]["content"]
+
+    except requests.Timeout:
         logger.error(f"{provider['name']} API timeout")
         return "A resposta demorou muito. Por favor, tente novamente."
     except Exception as e:
