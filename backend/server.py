@@ -87,7 +87,10 @@ DIRETRIZES DE COMPORTAMENTO:
    - Analise a situação com base nas metas atuais dele.
    - Entregue um plano de ação tático de 1 a 3 passos curtos para ele aplicar HOJE.
 5. Personalização: Use o nome do usuário quando apropriado. Referencie metas específicas dele.
-6. Linguagem: Fale em português brasileiro, de forma clara e profissional."""
+6. Linguagem: Fale em português brasileiro, de forma clara e profissional.
+7. Responde de forma extremamente concisa e direta ao ponto.
+8. Proibido usar mais de 2 parágrafos ou 150 palavras por resposta.
+9. Usa bullet points para planos de ação."""
 
 # ==================== MODELS ====================
 
@@ -342,7 +345,7 @@ async def get_system_prompt() -> str:
         return config["value"]
     return DEFAULT_ELIOS_PROMPT
 
-async def generate_user_summary(user_id: str) -> str:
+async def generate_elios_summary(user_id: str) -> str:
     """Generate and persist an executive summary for user form responses."""
     responses = await db.form_responses.find({"user_id": user_id}, {"_id": 0}).to_list(200)
     if not responses:
@@ -366,11 +369,8 @@ async def generate_user_summary(user_id: str) -> str:
         )
 
     system_prompt = (
-        "Você é o Analista de Perfil do ELIOS. Sua tarefa é transformar 12 respostas longas "
-        "de um formulário de performance em um resumo executivo de no máximo 500 tokens. "
-        "Foque em: 1. Estado atual de cada pilar; 2. Desejos de curto prazo; 3. A Meta Magnus principal. "
-        "Use um tom técnico e direto para que outra IA (o Coach ELIOS) possa ler e entender "
-        "o perfil do cliente instantaneamente."
+        "Resume os 11 pilares e a Meta Magnus deste utilizador num perfil técnico e denso "
+        "de no máximo 400 tokens. Este resumo servirá de base para um Coach de IA."
     )
     user_message = "Consolide as respostas abaixo no formato solicitado:\n\n" + "\n".join(formatted_responses)
 
@@ -388,42 +388,62 @@ async def build_user_context(user_id: str) -> str:
     
     # Get user info
     user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    elios_summary = user.get("elios_summary") if user else None
+    if elios_summary:
+        if user:
+            context_parts.append(f"USUÁRIO: {user.get('full_name', 'Desconhecido')}")
+        context_parts.append("\n[ELIOS SUMMARY - PERFIL CONSOLIDADO DO USUÁRIO]")
+        context_parts.append(elios_summary)
+        recent_goals = await db.goals.find(
+            {"user_id": user_id, "is_deleted": False},
+            {"_id": 0, "pillar": 1, "title": 1, "description": 1, "status": 1, "created_at": 1}
+        ).sort("created_at", -1).limit(5).to_list(5)
+
+        context_parts.append("\n[5 METAS MAIS RECENTES DO USUÁRIO]")
+        if recent_goals:
+            for goal in recent_goals:
+                context_parts.append(
+                    f"- [{goal.get('pillar', 'SEM PILAR')}] {goal.get('title', 'Sem título')} "
+                    f"({goal.get('status', 'sem status')})"
+                )
+                if goal.get("description"):
+                    context_parts.append(f"  {goal['description'][:200]}")
+        else:
+            context_parts.append("- Nenhuma meta encontrada.")
+        context_parts.append("\n[FIM DO CONTEXTO INJETADO PELO SISTEMA]")
+        return "\n".join(context_parts)
+
     if user:
         context_parts.append(f"USUÁRIO: {user.get('full_name', 'Desconhecido')}")
 
-    elios_summary = user.get("elios_summary") if user else None
-    if elios_summary:
-        context_parts.append("\n[ELIOS SUMMARY - PERFIL CONSOLIDADO DO USUÁRIO]")
-        context_parts.append(elios_summary)
-    else:
-        # Fallback for legacy users without summary
-        questions = await db.questions.find({"is_active": True}, {"_id": 0}).to_list(100)
-        questions_map = {q["id"]: q for q in questions}
-        responses = await db.form_responses.find({"user_id": user_id}, {"_id": 0}).to_list(100)
-        pillar_responses = {}
-        for resp in responses:
-            question = questions_map.get(resp["question_id"])
-            if question:
-                pillar = question["pillar"]
-                pillar_responses[pillar] = {
-                    "resposta_inicial": resp["answer"],
-                    "data_preenchimento": resp.get("created_at", "N/A")
-                }
+    # Fallback for legacy users without summary
+    questions = await db.questions.find({"is_active": True}, {"_id": 0}).to_list(100)
+    questions_map = {q["id"]: q for q in questions}
+    responses = await db.form_responses.find({"user_id": user_id}, {"_id": 0}).to_list(100)
+    pillar_responses = {}
+    for resp in responses:
+        question = questions_map.get(resp["question_id"])
+        if question:
+            pillar = question["pillar"]
+            pillar_responses[pillar] = {
+                "resposta_inicial": resp["answer"],
+                "data_preenchimento": resp.get("created_at", "N/A")
+            }
 
-        context_parts.append("\n[DADOS DOS 11 PILARES DO USUÁRIO]")
-        fallback_pillars_order = [
-            "ESPIRITUALIDADE", "CUIDADOS COM A SAÚDE", "EQUILÍBRIO EMOCIONAL",
-            "LAZER", "GESTÃO DO TEMPO E ORGANIZAÇÃO", "DESENVOLVIMENTO INTELECTUAL",
-            "IMAGEM PESSOAL", "FAMÍLIA", "CRESCIMENTO PROFISSIONAL",
-            "FINANÇAS", "NETWORKING E CONTRIBUIÇÃO", "META MAGNUS"
-        ]
-        for pillar in fallback_pillars_order:
-            context_parts.append(f"\n📌 {pillar}:")
-            if pillar in pillar_responses:
-                resp_data = pillar_responses[pillar]
-                context_parts.append(f"   Resposta Inicial: {resp_data['resposta_inicial'][:500]}...")
-            else:
-                context_parts.append("   Resposta Inicial: Não preenchido")
+    context_parts.append("\n[DADOS DOS 11 PILARES DO USUÁRIO]")
+    fallback_pillars_order = [
+        "ESPIRITUALIDADE", "CUIDADOS COM A SAÚDE", "EQUILÍBRIO EMOCIONAL",
+        "LAZER", "GESTÃO DO TEMPO E ORGANIZAÇÃO", "DESENVOLVIMENTO INTELECTUAL",
+        "IMAGEM PESSOAL", "FAMÍLIA", "CRESCIMENTO PROFISSIONAL",
+        "FINANÇAS", "NETWORKING E CONTRIBUIÇÃO", "META MAGNUS"
+    ]
+    for pillar in fallback_pillars_order:
+        context_parts.append(f"\n📌 {pillar}:")
+        if pillar in pillar_responses:
+            resp_data = pillar_responses[pillar]
+            context_parts.append(f"   Resposta Inicial: {resp_data['resposta_inicial'][:500]}...")
+        else:
+            context_parts.append("   Resposta Inicial: Não preenchido")
 
     # Get only active goals organized by pillar
     goals = await db.goals.find(
@@ -464,7 +484,7 @@ async def build_user_context(user_id: str) -> str:
                     context_parts.append(f"         └─ {goal['descricao'][:200]}")
         else:
             context_parts.append("   Metas Ativas: Nenhuma meta definida")
-    
+
     # Add additional knowledge from admin
     knowledge_docs = await db.ai_knowledge.find({"is_active": True}, {"_id": 0}).sort("priority", -1).to_list(50)
     if knowledge_docs:
@@ -494,9 +514,9 @@ async def call_ai_provider(system_message: str, user_message: str, history: List
     
     messages = [{"role": "system", "content": system_message}]
     
-    # Add conversation history (last 10 messages)
+    # Add conversation history (last 4 messages)
     if history:
-        for msg in history[-10:]:
+        for msg in history[-4:]:
             messages.append({"role": "user", "content": msg["user_message"]})
             messages.append({"role": "assistant", "content": msg["assistant_message"]})
     
@@ -514,7 +534,7 @@ async def call_ai_provider(system_message: str, user_message: str, history: List
                 "model": provider["model"],
                 "messages": messages,
                 "temperature": 0.7,
-                "max_tokens": 1500
+                "max_tokens": 400
             },
             timeout=60
         )
@@ -558,7 +578,7 @@ async def chat_with_elios(user_id: str, message: str, context: str = None, pilla
     history = await db.chat_history.find(
         {"user_id": user_id},
         {"_id": 0}
-    ).sort("created_at", -1).limit(10).to_list(10)
+    ).sort("created_at", -1).limit(4).to_list(4)
     history.reverse()
     
     # Call configured AI provider
@@ -838,7 +858,7 @@ async def submit_form(submission: FormSubmission, background_tasks: BackgroundTa
         }
         await db.form_responses.insert_one(response_doc)
 
-    background_tasks.add_task(generate_user_summary, user_id)
+    background_tasks.add_task(generate_elios_summary, user_id)
     
     # Send welcome email
     email_sent = send_welcome_email(submission.email, submission.full_name, password)
