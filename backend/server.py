@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, BackgroundTasks
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -110,6 +110,7 @@ class UserResponse(BaseModel):
     is_active: bool
     created_at: str
     form_completed: bool = False
+    elios_summary: Optional[str] = None
 
 class UserUpdate(BaseModel):
     full_name: Optional[str] = None
@@ -341,6 +342,46 @@ async def get_system_prompt() -> str:
         return config["value"]
     return DEFAULT_ELIOS_PROMPT
 
+async def generate_user_summary(user_id: str) -> str:
+    """Generate and persist an executive summary for user form responses."""
+    responses = await db.form_responses.find({"user_id": user_id}, {"_id": 0}).to_list(200)
+    if not responses:
+        await db.users.update_one({"id": user_id}, {"$set": {"elios_summary": ""}})
+        return ""
+
+    question_ids = list({response["question_id"] for response in responses if response.get("question_id")})
+    questions = await db.questions.find(
+        {"id": {"$in": question_ids}},
+        {"_id": 0, "id": 1, "title": 1, "pillar": 1}
+    ).to_list(200)
+    questions_map = {question["id"]: question for question in questions}
+
+    formatted_responses = []
+    for index, response in enumerate(responses, start=1):
+        question = questions_map.get(response["question_id"], {})
+        formatted_responses.append(
+            f"{index}. Pilar: {question.get('pillar', 'N/A')} | "
+            f"Pergunta: {question.get('title', 'Pergunta não encontrada')} | "
+            f"Resposta: {response.get('answer', '')}"
+        )
+
+    system_prompt = (
+        "Você é o Analista de Perfil do ELIOS. Sua tarefa é transformar 12 respostas longas "
+        "de um formulário de performance em um resumo executivo de no máximo 500 tokens. "
+        "Foque em: 1. Estado atual de cada pilar; 2. Desejos de curto prazo; 3. A Meta Magnus principal. "
+        "Use um tom técnico e direto para que outra IA (o Coach ELIOS) possa ler e entender "
+        "o perfil do cliente instantaneamente."
+    )
+    user_message = "Consolide as respostas abaixo no formato solicitado:\n\n" + "\n".join(formatted_responses)
+
+    summary = await call_ai_provider(system_prompt, user_message)
+    if not summary or summary.startswith("Erro"):
+        logger.warning(f"Failed to generate ELIOS summary for user_id={user_id}: {summary}")
+        return summary or ""
+
+    await db.users.update_one({"id": user_id}, {"$set": {"elios_summary": summary}})
+    return summary
+
 async def build_user_context(user_id: str) -> str:
     """Build comprehensive user context for ELIOS"""
     context_parts = []
@@ -349,25 +390,46 @@ async def build_user_context(user_id: str) -> str:
     user = await db.users.find_one({"id": user_id}, {"_id": 0})
     if user:
         context_parts.append(f"USUÁRIO: {user.get('full_name', 'Desconhecido')}")
-    
-    # Get all questions for reference
-    questions = await db.questions.find({"is_active": True}, {"_id": 0}).to_list(100)
-    questions_map = {q["id"]: q for q in questions}
-    
-    # Get user's form responses organized by pillar
-    responses = await db.form_responses.find({"user_id": user_id}, {"_id": 0}).to_list(100)
-    pillar_responses = {}
-    for resp in responses:
-        question = questions_map.get(resp["question_id"])
-        if question:
-            pillar = question["pillar"]
-            pillar_responses[pillar] = {
-                "resposta_inicial": resp["answer"],
-                "data_preenchimento": resp.get("created_at", "N/A")
-            }
-    
-    # Get user's goals organized by pillar
-    goals = await db.goals.find({"user_id": user_id, "is_deleted": False}, {"_id": 0}).to_list(100)
+
+    elios_summary = user.get("elios_summary") if user else None
+    if elios_summary:
+        context_parts.append("\n[ELIOS SUMMARY - PERFIL CONSOLIDADO DO USUÁRIO]")
+        context_parts.append(elios_summary)
+    else:
+        # Fallback for legacy users without summary
+        questions = await db.questions.find({"is_active": True}, {"_id": 0}).to_list(100)
+        questions_map = {q["id"]: q for q in questions}
+        responses = await db.form_responses.find({"user_id": user_id}, {"_id": 0}).to_list(100)
+        pillar_responses = {}
+        for resp in responses:
+            question = questions_map.get(resp["question_id"])
+            if question:
+                pillar = question["pillar"]
+                pillar_responses[pillar] = {
+                    "resposta_inicial": resp["answer"],
+                    "data_preenchimento": resp.get("created_at", "N/A")
+                }
+
+        context_parts.append("\n[DADOS DOS 11 PILARES DO USUÁRIO]")
+        fallback_pillars_order = [
+            "ESPIRITUALIDADE", "CUIDADOS COM A SAÚDE", "EQUILÍBRIO EMOCIONAL",
+            "LAZER", "GESTÃO DO TEMPO E ORGANIZAÇÃO", "DESENVOLVIMENTO INTELECTUAL",
+            "IMAGEM PESSOAL", "FAMÍLIA", "CRESCIMENTO PROFISSIONAL",
+            "FINANÇAS", "NETWORKING E CONTRIBUIÇÃO", "META MAGNUS"
+        ]
+        for pillar in fallback_pillars_order:
+            context_parts.append(f"\n📌 {pillar}:")
+            if pillar in pillar_responses:
+                resp_data = pillar_responses[pillar]
+                context_parts.append(f"   Resposta Inicial: {resp_data['resposta_inicial'][:500]}...")
+            else:
+                context_parts.append("   Resposta Inicial: Não preenchido")
+
+    # Get only active goals organized by pillar
+    goals = await db.goals.find(
+        {"user_id": user_id, "is_deleted": False, "status": "active"},
+        {"_id": 0}
+    ).to_list(100)
     pillar_goals = {}
     for goal in goals:
         pillar = goal["pillar"]
@@ -380,8 +442,8 @@ async def build_user_context(user_id: str) -> str:
             "data_limite": goal.get("target_date", "Sem prazo")
         })
     
-    # Build context for each pillar
-    context_parts.append("\n[DADOS DOS 11 PILARES DO USUÁRIO]")
+    # Build goals context for each pillar
+    context_parts.append("\n[METAS ATIVAS DO USUÁRIO]")
     
     pillars_order = [
         "ESPIRITUALIDADE", "CUIDADOS COM A SAÚDE", "EQUILÍBRIO EMOCIONAL",
@@ -392,20 +454,12 @@ async def build_user_context(user_id: str) -> str:
     
     for pillar in pillars_order:
         context_parts.append(f"\n📌 {pillar}:")
-        
-        # Initial response
-        if pillar in pillar_responses:
-            resp_data = pillar_responses[pillar]
-            context_parts.append(f"   Resposta Inicial: {resp_data['resposta_inicial'][:500]}...")
-        else:
-            context_parts.append("   Resposta Inicial: Não preenchido")
-        
-        # Goals
+
+        # Active goals
         if pillar in pillar_goals:
             context_parts.append(f"   Metas Ativas ({len(pillar_goals[pillar])}):")
             for goal in pillar_goals[pillar]:
-                status_emoji = "✅" if goal["status"] == "completed" else "🎯"
-                context_parts.append(f"      {status_emoji} {goal['titulo']} ({goal['status']})")
+                context_parts.append(f"      🎯 {goal['titulo']} ({goal['status']})")
                 if goal["descricao"]:
                     context_parts.append(f"         └─ {goal['descricao'][:200]}")
         else:
@@ -579,6 +633,7 @@ async def register_user(user: UserCreate):
         "role": user.role,
         "is_active": True if user.role == "ADMIN" else False,
         "form_completed": False,
+        "elios_summary": None,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     
@@ -613,7 +668,8 @@ async def login(credentials: UserLogin):
             "full_name": user["full_name"],
             "email": user["email"],
             "role": user["role"],
-            "form_completed": user.get("form_completed", False)
+            "form_completed": user.get("form_completed", False),
+            "elios_summary": user.get("elios_summary")
         }
     }
 
@@ -627,7 +683,8 @@ async def get_me(user: dict = Depends(get_current_user)):
         role=user["role"],
         is_active=user["is_active"],
         created_at=user["created_at"],
-        form_completed=user.get("form_completed", False)
+        form_completed=user.get("form_completed", False),
+        elios_summary=user.get("elios_summary")
     )
 
 @api_router.post("/auth/change-password")
@@ -744,7 +801,7 @@ async def delete_question(question_id: str, admin: dict = Depends(get_admin_user
 # ---- FORM SUBMISSION ROUTES ----
 
 @api_router.post("/form/submit")
-async def submit_form(submission: FormSubmission):
+async def submit_form(submission: FormSubmission, background_tasks: BackgroundTasks):
     """Submit the complete form and create user"""
     # Check if email already exists
     existing = await db.users.find_one({"email": submission.email})
@@ -763,6 +820,7 @@ async def submit_form(submission: FormSubmission):
         "role": "DEFAULT",
         "is_active": False,  # Inactive until admin approves
         "form_completed": True,
+        "elios_summary": None,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     
@@ -779,6 +837,8 @@ async def submit_form(submission: FormSubmission):
             "version": 1
         }
         await db.form_responses.insert_one(response_doc)
+
+    background_tasks.add_task(generate_user_summary, user_id)
     
     # Send welcome email
     email_sent = send_welcome_email(submission.email, submission.full_name, password)
@@ -1157,6 +1217,7 @@ async def init_admin():
         "role": "ADMIN",
         "is_active": True,
         "form_completed": True,
+        "elios_summary": None,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     
