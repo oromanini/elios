@@ -37,6 +37,7 @@ JWT_EXPIRATION_HOURS = 24
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY', '')
 GROQ_BASE_URL = os.environ.get('GROQ_BASE_URL', 'https://api.groq.com/openai/v1')
 GROQ_MODEL = os.environ.get('GROQ_MODEL', 'llama-3.3-70b-versatile')
+GROQ_FORM_MODEL = os.environ.get('GROQ_FORM_MODEL', '')
 
 # SMTP Configuration
 SMTP_HOST = os.environ.get('SMTP_HOST', 'smtp.hostinger.com')
@@ -505,7 +506,14 @@ def get_ai_provider_settings() -> Dict[str, str]:
         "name": "Groq"
     }
 
-async def call_ai_provider(system_message: str, user_message: str, history: List[dict] = None) -> str:
+async def call_ai_provider(
+    system_message: str,
+    user_message: str,
+    history: List[dict] = None,
+    model: Optional[str] = None,
+    temperature: float = 0.7,
+    max_tokens: int = 400
+) -> str:
     """Call configured AI provider for chat completion using OpenAI-compatible API."""
     provider = get_ai_provider_settings()
     
@@ -531,10 +539,10 @@ async def call_ai_provider(system_message: str, user_message: str, history: List
                 "Content-Type": "application/json"
             },
             json={
-                "model": provider["model"],
+                "model": model or provider["model"],
                 "messages": messages,
-                "temperature": 0.7,
-                "max_tokens": 400
+                "temperature": temperature,
+                "max_tokens": max_tokens
             },
             timeout=60
         )
@@ -605,24 +613,27 @@ async def analyze_form_response(pillar: str, question: str, answer: str) -> str:
     if not provider["api_key"]:
         return "Configure a API para habilitar análises."
     
-    system_message = f"""Você é ELIOS, coach de alta performance, analisando a resposta de um usuário no formulário.
-
-Pilar: {pillar}
-Pergunta: {question}
-
+    system_message = """Você é o ELIOS, analisando uma resposta do formulário em tempo real.
 REGRAS:
-1. Seja MUITO breve (máximo 2 frases)
-2. Se a resposta for vaga ou genérica, sugira ser mais específico
-3. Se a resposta for boa e específica, parabenize ("Boa!" ou "Excelente!")
-4. Se a meta for muito ambiciosa, sugira micro-objetivos
-5. Não repita a pergunta ou a resposta do usuário
 
-Tom: Direto, motivador, sem enrolação."""
+Máximo de 15 palavras.
 
-    user_message = f"Resposta do usuário: {answer}"
-    
+Se a resposta for boa: "Excelente! Meta clara e objetiva."
+
+Se for vaga: "Pode ser mais específico com um número ou data?"
+
+Proibido saudações ou repetir o usuário."""
+
+    user_message = f"Pilar: {pillar}\nPergunta: {question}\nResposta do usuário: {answer}"
+
     try:
-        response = await call_ai_provider(system_message, user_message)
+        response = await call_ai_provider(
+            system_message,
+            user_message,
+            model=GROQ_FORM_MODEL or provider["model"],
+            temperature=0.3,
+            max_tokens=50
+        )
         return response
     except Exception as e:
         logger.error(f"Error analyzing response: {e}")
