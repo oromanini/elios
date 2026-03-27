@@ -260,8 +260,8 @@
 
 /* ELIOS micro-robot */
 .elios-robot {
-    width: 34px;
-    height: 42px;
+    width: 36px;
+    height: 44px;
     flex-shrink: 0;
     display: flex;
     align-items: center;
@@ -271,25 +271,25 @@
 }
 
 .elios-robot__head {
-    width: 30px;
-    height: 38px;
-    border-radius: 12px 12px 10px 10px;
-    clip-path: polygon(16% 0%, 84% 0%, 100% 20%, 100% 78%, 78% 100%, 22% 100%, 0% 78%, 0% 20%);
-    border: 1px solid rgba(158, 122, 70, 0.6);
+    width: 32px;
+    height: 40px;
+    border-radius: 13px 13px 11px 11px;
+    clip-path: polygon(15% 0%, 85% 0%, 100% 18%, 100% 80%, 78% 100%, 22% 100%, 0% 80%, 0% 18%);
+    border: 1px solid rgba(167, 129, 76, 0.45);
     background:
-        linear-gradient(120deg, rgba(195, 156, 94, 0.2) 0%, rgba(195, 156, 94, 0) 45%),
-        linear-gradient(165deg, rgba(74, 76, 81, 0.35) 0%, rgba(16, 16, 19, 0.95) 58%, rgba(8, 8, 10, 1) 100%),
+        linear-gradient(140deg, rgba(188, 149, 95, 0.25) 0%, rgba(188, 149, 95, 0) 32%),
+        linear-gradient(170deg, rgba(49, 52, 58, 0.45) 0%, rgba(17, 18, 22, 0.94) 50%, rgba(6, 7, 9, 1) 100%),
         repeating-linear-gradient(
-            -40deg,
-            rgba(255, 255, 255, 0.03) 0px,
-            rgba(255, 255, 255, 0.03) 1px,
+            -42deg,
+            rgba(255, 255, 255, 0.035) 0px,
+            rgba(255, 255, 255, 0.035) 1px,
             rgba(255, 255, 255, 0) 1px,
             rgba(255, 255, 255, 0) 5px
         );
     box-shadow:
-        inset 0 1px 0 rgba(255, 225, 167, 0.2),
-        inset 0 -10px 16px rgba(2, 2, 3, 0.65),
-        0 8px 15px rgba(0, 0, 0, 0.42);
+        inset 0 1px 0 rgba(236, 194, 138, 0.18),
+        inset 0 -11px 16px rgba(2, 2, 3, 0.72),
+        0 8px 14px rgba(0, 0, 0, 0.45);
     position: relative;
 }
 
@@ -297,76 +297,96 @@
     content: '';
     position: absolute;
     left: 50%;
-    top: 5px;
-    width: 14px;
-    height: 3px;
+    top: 3px;
+    width: 17px;
+    height: 4px;
     transform: translateX(-50%);
     border-radius: 999px;
-    background: linear-gradient(90deg, rgba(120, 90, 42, 0.2), rgba(174, 132, 74, 0.65), rgba(120, 90, 42, 0.2));
-    box-shadow: 0 0 8px rgba(169, 131, 75, 0.4);
-    opacity: 0.85;
+    background: linear-gradient(90deg, rgba(93, 71, 40, 0.1), rgba(182, 141, 86, 0.7), rgba(93, 71, 40, 0.1));
+    box-shadow: 0 0 6px rgba(170, 130, 80, 0.45);
+    opacity: 0.75;
 }
 
 .elios-robot__head::after {
     content: '';
     position: absolute;
-    inset: 4px;
-    border-radius: 8px;
-    border: 1px solid rgba(186, 143, 82, 0.26);
+    inset: 3px;
+    border-radius: 9px;
+    border: 1px solid rgba(164, 126, 73, 0.22);
     background:
-      linear-gradient(160deg, rgba(255, 236, 198, 0.08) 0%, rgba(255, 236, 198, 0) 35%),
-      linear-gradient(20deg, rgba(0, 0, 0, 0.06), rgba(0, 0, 0, 0.35));
+      linear-gradient(160deg, rgba(242, 213, 171, 0.1) 0%, rgba(242, 213, 171, 0) 33%),
+      linear-gradient(20deg, rgba(0, 0, 0, 0.04), rgba(0, 0, 0, 0.42));
     pointer-events: none;
 }
 
 .elios-robot__crest {
     position: absolute;
-    top: 10px;
+    top: 7px;
     left: 50%;
     transform: translateX(-50%);
     display: flex;
     gap: 3px;
+    z-index: 2;
 }
 
 .elios-robot__arrow {
     width: 0;
     height: 0;
-    border-left: 3px solid transparent;
-    border-right: 3px solid transparent;
-    border-bottom: 6px solid rgba(182, 137, 74, 0.78);
-    filter: drop-shadow(0 0 4px rgba(176, 132, 72, 0.45));
-    opacity: 0.55;
+    border-left: 2.6px solid transparent;
+    border-right: 2.6px solid transparent;
+    border-bottom: 5px solid rgba(176, 136, 82, 0.75);
+    filter: drop-shadow(0 0 4px rgba(170, 130, 80, 0.45));
+    opacity: 0.5;
+}
+
+.elios-robot__visor {
+    position: absolute;
+    left: 50%;
+    top: 14px;
+    transform: translateX(-50%);
+    width: 24px;
+    height: 13px;
+    border-radius: 9px;
+    border: 1px solid rgba(170, 132, 81, 0.45);
+    background:
+        linear-gradient(160deg, rgba(221, 188, 141, 0.18) 0%, rgba(221, 188, 141, 0) 32%),
+        linear-gradient(180deg, rgba(20, 24, 31, 0.95), rgba(8, 10, 15, 0.98));
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.08),
+        inset 0 -4px 7px rgba(0, 0, 0, 0.55),
+        0 0 8px rgba(0, 0, 0, 0.28);
 }
 
 .elios-robot__eyes {
     position: absolute;
-    top: 16px;
+    top: 3px;
     left: 50%;
     transform: translateX(-50%);
     display: flex;
-    gap: 7px;
+    gap: 6px;
 }
 
 .elios-robot__eye {
-    width: 8px;
-    height: 8px;
+    width: 7px;
+    height: 7px;
     border-radius: 999px;
-    background: radial-gradient(circle at 35% 35%, rgba(255, 248, 220, 0.95) 0%, rgba(255, 210, 132, 0.85) 40%, rgba(184, 127, 52, 0.88) 100%);
-    box-shadow: 0 0 8px rgba(255, 191, 103, 0.75), 0 0 14px rgba(255, 182, 77, 0.28);
+    background: radial-gradient(circle at 35% 35%, rgba(255, 245, 220, 0.95) 0%, rgba(255, 208, 136, 0.85) 42%, rgba(188, 126, 58, 0.92) 100%);
+    box-shadow: 0 0 9px rgba(255, 186, 95, 0.78), 0 0 14px rgba(255, 174, 82, 0.35);
     transform: scale3d(1, 1, 1);
+    will-change: transform;
 }
 
-.elios-robot__led {
+.elios-robot__chin {
     position: absolute;
-    bottom: 9px;
+    bottom: 8px;
     left: 50%;
-    transform: translateX(-50%) scaleX(1);
-    width: 14px;
-    height: 5px;
-    border-radius: 0 0 10px 10px;
-    border-bottom: 1px solid rgba(177, 133, 74, 0.6);
-    background: linear-gradient(180deg, rgba(171, 127, 72, 0), rgba(171, 127, 72, 0.2));
-    box-shadow: 0 0 0 rgba(193, 146, 84, 0);
+    transform: translateX(-50%);
+    width: 16px;
+    height: 4px;
+    border-radius: 2px 2px 7px 7px;
+    border: 1px solid rgba(145, 110, 63, 0.55);
+    border-top: none;
+    background: linear-gradient(180deg, rgba(169, 128, 74, 0.2), rgba(52, 39, 24, 0.08));
 }
 
 .elios-robot--idle {
@@ -381,12 +401,8 @@
     animation: eliosFloatFocus 2s ease-in-out infinite;
 }
 
-.elios-robot--thinking .elios-robot__led {
-    animation: eliosLedBlink 0.9s ease-in-out infinite;
-}
-
 .elios-robot--thinking .elios-robot__eye {
-    animation: eliosEyePulse 1.6s ease-in-out infinite;
+    animation: eliosEyePulse 1.45s ease-in-out infinite;
 }
 
 .elios-robot--responding {
@@ -394,11 +410,11 @@
 }
 
 .elios-robot--responding .elios-robot__eye {
-    animation: eliosEyeSurge 0.9s ease-out;
+    animation: eliosEyeSurge 0.95s ease-out;
 }
 
 .elios-robot--responding .elios-robot__arrow {
-    animation: eliosCrestPulse 0.9s ease-out;
+    animation: eliosCrestPulse 0.95s ease-out;
 }
 
 @keyframes eliosFloat {
@@ -416,19 +432,6 @@
     45% { transform: scale3d(1.09, 1.09, 1); opacity: 1; }
 }
 
-@keyframes eliosLedBlink {
-    0%, 100% {
-        border-bottom-color: rgba(177, 133, 74, 0.4);
-        transform: translateX(-50%) scaleX(0.95);
-        box-shadow: 0 0 0 rgba(193, 146, 84, 0);
-    }
-    50% {
-        border-bottom-color: rgba(219, 176, 112, 0.95);
-        transform: translateX(-50%) scaleX(1.05);
-        box-shadow: 0 0 8px rgba(200, 152, 90, 0.45);
-    }
-}
-
 @keyframes eliosHop {
     0% { transform: translate3d(0, 0, 0) scale3d(1, 1, 1); }
     22% { transform: translate3d(0, -10px, 0) scale3d(1.02, 0.98, 1); }
@@ -438,78 +441,84 @@
 }
 
 @keyframes eliosEyeSurge {
-    0% { transform: scale3d(1, 1, 1); box-shadow: 0 0 8px rgba(255, 191, 103, 0.75), 0 0 14px rgba(255, 182, 77, 0.28); }
-    45% { transform: scale3d(1.24, 1.24, 1); box-shadow: 0 0 16px rgba(255, 216, 151, 0.95), 0 0 22px rgba(255, 189, 92, 0.58); }
-    100% { transform: scale3d(1, 1, 1); box-shadow: 0 0 8px rgba(255, 191, 103, 0.75), 0 0 14px rgba(255, 182, 77, 0.28); }
+    0% { transform: scale3d(1, 1, 1); box-shadow: 0 0 9px rgba(255, 186, 95, 0.78), 0 0 14px rgba(255, 174, 82, 0.35); }
+    45% { transform: scale3d(1.26, 1.26, 1); box-shadow: 0 0 18px rgba(255, 218, 152, 0.98), 0 0 24px rgba(255, 180, 82, 0.65); }
+    100% { transform: scale3d(1, 1, 1); box-shadow: 0 0 9px rgba(255, 186, 95, 0.78), 0 0 14px rgba(255, 174, 82, 0.35); }
 }
 
 @keyframes eliosCrestPulse {
     0%, 100% {
         transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
         opacity: 0.55;
-        filter: drop-shadow(0 0 4px rgba(176, 132, 72, 0.45));
+        filter: drop-shadow(0 0 4px rgba(168, 128, 79, 0.45));
     }
     45% {
         transform: translate3d(0, -1px, 0) scale3d(1.12, 1.12, 1);
         opacity: 1;
-        filter: drop-shadow(0 0 6px rgba(235, 184, 114, 0.75));
+        filter: drop-shadow(0 0 7px rgba(221, 172, 103, 0.85));
     }
 }
 
 @media (min-width: 640px) {
     .elios-robot {
-        width: 40px;
-        height: 50px;
+        width: 42px;
+        height: 52px;
     }
 
     .elios-robot__head {
-        width: 36px;
-        height: 44px;
-        border-radius: 14px 14px 12px 12px;
+        width: 37px;
+        height: 46px;
+        border-radius: 15px 15px 12px 12px;
     }
 
     .elios-robot__head::before {
-        width: 14px;
+        width: 18px;
         height: 4px;
-        top: 7px;
+        top: 4px;
     }
 
     .elios-robot__head::after {
-        inset: 5px;
+        inset: 4px;
         border-radius: 10px;
     }
 
     .elios-robot__crest {
-        top: 12px;
+        top: 8px;
     }
 
     .elios-robot__arrow {
-        border-left-width: 3.5px;
-        border-right-width: 3.5px;
-        border-bottom-width: 7px;
+        border-left-width: 3px;
+        border-right-width: 3px;
+        border-bottom-width: 6px;
+    }
+
+    .elios-robot__visor {
+        top: 16px;
+        width: 27px;
+        height: 15px;
     }
 
     .elios-robot__eyes {
-        top: 20px;
-        gap: 8px;
+        top: 4px;
+        gap: 7px;
     }
 
     .elios-robot__eye {
-        width: 9px;
-        height: 9px;
+        width: 8px;
+        height: 8px;
     }
 
-    .elios-robot__led {
-        bottom: 11px;
-        width: 16px;
-        height: 7px;
+    .elios-robot__chin {
+        bottom: 9px;
+        width: 18px;
+        height: 5px;
     }
 }
 
 @media (prefers-reduced-motion: reduce) {
     .elios-robot,
     .elios-robot__eye,
-    .elios-robot__led {
+    .elios-robot__arrow {
         animation: none !important;
         transition: none !important;
     }
