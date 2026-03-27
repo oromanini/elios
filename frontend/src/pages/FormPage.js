@@ -18,7 +18,9 @@ import {
   Send,
   Loader2,
   User,
-  Mail
+  Mail,
+  Camera,
+  CalendarDays
 } from 'lucide-react';
 
 const PILLAR_ICONS = {
@@ -53,6 +55,8 @@ const FormPage = () => {
   // Form data
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
+  const [profilePhoto, setProfilePhoto] = useState(null);
+  const [birthDate, setBirthDate] = useState('');
   const [responses, setResponses] = useState({});
 
   useEffect(() => {
@@ -96,7 +100,7 @@ const FormPage = () => {
     }
   };
 
-  const totalSteps = questions.length + 2; // Name + Email + Questions
+  const totalSteps = questions.length + 4; // Name + Email + Photo + Birth date + Questions
   const progress = ((currentStep + 1) / totalSteps) * 100;
 
   const handleNext = () => {
@@ -108,8 +112,12 @@ const FormPage = () => {
       toast.error('Por favor, insira um email válido');
       return;
     }
-    if (currentStep >= 2) {
-      const question = questions[currentStep - 2];
+    if (currentStep === 3 && !birthDate) {
+      toast.error('Por favor, informe sua data de nascimento');
+      return;
+    }
+    if (currentStep >= 4) {
+      const question = questions[currentStep - 4];
       if (!responses[question.id]?.trim()) {
         toast.error('Por favor, responda a pergunta antes de continuar');
         return;
@@ -143,9 +151,9 @@ const FormPage = () => {
   };
 
   const analyzeResponse = async () => {
-    if (currentStep < 2) return;
+    if (currentStep < 4) return;
     
-    const question = questions[currentStep - 2];
+    const question = questions[currentStep - 4];
     const answer = responses[question.id];
     
     if (!answer || answer.length < 20) return;
@@ -173,11 +181,16 @@ const FormPage = () => {
         answer: answer
       }));
 
-      await formAPI.submit({
-        full_name: fullName,
-        email: email,
-        responses: formattedResponses
-      });
+      const formData = new FormData();
+      formData.append('full_name', fullName);
+      formData.append('email', email);
+      formData.append('date_of_birth', birthDate);
+      formData.append('responses', JSON.stringify(formattedResponses));
+      if (profilePhoto) {
+        formData.append('profile_photo', profilePhoto);
+      }
+
+      await formAPI.submit(formData);
 
       toast.success('Formulário enviado com sucesso! Verifique seu email.');
       navigate('/form/success');
@@ -271,7 +284,78 @@ const FormPage = () => {
       );
     }
 
-    const questionIndex = currentStep - 2;
+    if (currentStep === 2) {
+      return (
+        <motion.div
+          key="step-photo"
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: -20 }}
+          className="space-y-6"
+        >
+          <div className="text-center mb-8">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-primary/20 flex items-center justify-center">
+              <Camera className="w-8 h-8 text-primary" />
+            </div>
+            <h2 className="text-2xl font-bold text-white mb-2">Foto de Perfil</h2>
+            <p className="text-slate-400">Envie sua foto (opcional) para personalizar seu perfil.</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="profilePhoto" className="text-slate-400 uppercase text-xs tracking-wide">
+              Upload de foto (JPEG/PNG, até 5MB)
+            </Label>
+            <Input
+              id="profilePhoto"
+              type="file"
+              accept="image/jpeg,image/png"
+              onChange={(e) => setProfilePhoto(e.target.files?.[0] || null)}
+              className="bg-slate-900/50 border-slate-700 text-white file:bg-primary/20 file:text-primary file:border-0 file:rounded-md file:px-3 file:py-2"
+              data-testid="form-photo"
+            />
+            <p className="text-xs text-slate-500">
+              A imagem será otimizada automaticamente para avatar.
+            </p>
+          </div>
+        </motion.div>
+      );
+    }
+
+    if (currentStep === 3) {
+      return (
+        <motion.div
+          key="step-birthdate"
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: -20 }}
+          className="space-y-6"
+        >
+          <div className="text-center mb-8">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-primary/20 flex items-center justify-center">
+              <CalendarDays className="w-8 h-8 text-primary" />
+            </div>
+            <h2 className="text-2xl font-bold text-white mb-2">Data de Nascimento</h2>
+            <p className="text-slate-400">Precisamos dessa informação para futuras análises.</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="birthDate" className="text-slate-400 uppercase text-xs tracking-wide">
+              Data de Nascimento
+            </Label>
+            <Input
+              id="birthDate"
+              type="date"
+              value={birthDate}
+              onChange={(e) => setBirthDate(e.target.value)}
+              className="bg-slate-900/50 border-slate-700 text-white h-14 text-lg"
+              data-testid="form-birthdate"
+            />
+          </div>
+        </motion.div>
+      );
+    }
+
+    const questionIndex = currentStep - 4;
     const question = questions[questionIndex];
 
     if (!question) return null;
