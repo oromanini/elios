@@ -476,11 +476,13 @@ const FormPage = () => {
                       <span className="elios-robot__arrow" />
                       <span className="elios-robot__arrow" />
                     </div>
-                    <div className="elios-robot__eyes">
-                      <span className="elios-robot__eye" />
-                      <span className="elios-robot__eye" />
+                    <div className="elios-robot__visor">
+                      <div className="elios-robot__eyes">
+                        <span className="elios-robot__eye" />
+                        <span className="elios-robot__eye" />
+                      </div>
                     </div>
-                    <span className="elios-robot__led" />
+                    <span className="elios-robot__chin" />
                   </div>
                 </div>
                 <div className="flex-1 min-w-0">
