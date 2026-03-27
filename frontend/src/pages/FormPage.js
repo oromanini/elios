@@ -484,8 +484,8 @@ const FormPage = () => {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
-                    <Sparkles className="w-4 h-4 text-primary shrink-0" />
-                    <p className="text-primary text-sm font-medium">ELIOS Analisa:</p>
+                    <Sparkles className="w-4 h-4 text-amber-300 shrink-0" />
+                    <p className="text-amber-300 text-sm font-medium">ELIOS Analisa:</p>
                   </div>
                   {analyzing ? (
                     <div className="flex items-center gap-2 text-slate-400">
