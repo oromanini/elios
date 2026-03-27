@@ -389,7 +389,7 @@ const FormPage = () => {
           />
 
           {/* AI Analysis */}
-          {(analyzing || aiAnalysis) && (
+          {(isUserTyping || analyzing || aiAnalysis) && (
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -419,6 +419,8 @@ const FormPage = () => {
                       <Loader2 className="w-4 h-4 animate-spin" />
                       <span>Analisando sua resposta...</span>
                     </div>
+                  ) : isUserTyping && !aiAnalysis ? (
+                    <p className="text-slate-400 text-sm">Helios está acompanhando sua resposta em tempo real...</p>
                   ) : (
                     <p className="text-slate-300 text-sm">{aiAnalysis}</p>
                   )}
