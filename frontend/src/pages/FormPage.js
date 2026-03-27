@@ -23,131 +23,19 @@ import {
   CalendarDays
 } from 'lucide-react';
 
-const PILLAR_ICON_THEMES = {
-  'ESPIRITUALIDADE': { bg: '#7C3AED', accent: '#C4B5FD' },
-  'CUIDADOS COM A SAÚDE': { bg: '#059669', accent: '#6EE7B7' },
-  'EQUILÍBRIO EMOCIONAL': { bg: '#D97706', accent: '#FCD34D' },
-  'LAZER': { bg: '#DB2777', accent: '#F9A8D4' },
-  'GESTÃO DO TEMPO E ORGANIZAÇÃO': { bg: '#4B5563', accent: '#D1D5DB' },
-  'DESENVOLVIMENTO INTELECTUAL': { bg: '#4F46E5', accent: '#A5B4FC' },
-  'IMAGEM PESSOAL': { bg: '#0F766E', accent: '#5EEAD4' },
-  'FAMÍLIA': { bg: '#BE123C', accent: '#FDA4AF' },
-  'CRESCIMENTO PROFISSIONAL': { bg: '#1D4ED8', accent: '#93C5FD' },
-  'FINANÇAS': { bg: '#15803D', accent: '#86EFAC' },
-  'NETWORKING E CONTRIBUIÇÃO': { bg: '#7E22CE', accent: '#D8B4FE' },
-  'META MAGNUS': { bg: '#B45309', accent: '#FDE68A' },
-  DEFAULT: { bg: '#334155', accent: '#CBD5E1' }
-};
-
-const PillarStepIcon = ({ pillar }) => {
-  const theme = PILLAR_ICON_THEMES[pillar] || PILLAR_ICON_THEMES.DEFAULT;
-  const commonStroke = {
-    stroke: theme.accent,
-    strokeWidth: 1.8,
-    strokeLinecap: 'round',
-    strokeLinejoin: 'round',
-    fill: 'none'
-  };
-
-  const iconsByPillar = {
-    'ESPIRITUALIDADE': (
-      <>
-        <path {...commonStroke} d="M20 17c2.4-2.8 2.3-6.6 0-8.9-2.3 2.3-2.4 6.1 0 8.9Z" />
-        <path {...commonStroke} d="M12 17c-2.4-2.8-2.3-6.6 0-8.9 2.3 2.3 2.4 6.1 0 8.9Z" />
-        <path {...commonStroke} d="M16 18v8" />
-      </>
-    ),
-    'CUIDADOS COM A SAÚDE': (
-      <>
-        <path {...commonStroke} d="M16 25V9" />
-        <path {...commonStroke} d="M8 17h16" />
-        <circle cx="16" cy="17" r="8.5" {...commonStroke} />
-      </>
-    ),
-    'EQUILÍBRIO EMOCIONAL': (
-      <>
-        <path {...commonStroke} d="M16 26c4.3-2.5 7-6.2 7-9.8A4.3 4.3 0 0 0 16 13a4.3 4.3 0 0 0-7 3.2c0 3.6 2.7 7.3 7 9.8Z" />
-        <path {...commonStroke} d="M16 10v3" />
-      </>
-    ),
-    'LAZER': (
-      <>
-        <circle cx="16" cy="16" r="9" {...commonStroke} />
-        <path {...commonStroke} d="m16 9 2.1 4.2 4.6.7-3.3 3.3.8 4.6-4.2-2.2-4.2 2.2.8-4.6-3.3-3.3 4.6-.7Z" />
-      </>
-    ),
-    'GESTÃO DO TEMPO E ORGANIZAÇÃO': (
-      <>
-        <circle cx="16" cy="16" r="9" {...commonStroke} />
-        <path {...commonStroke} d="M16 16V11.5" />
-        <path {...commonStroke} d="m16 16 3.5 2" />
-      </>
-    ),
-    'DESENVOLVIMENTO INTELECTUAL': (
-      <>
-        <path {...commonStroke} d="M8.5 11.5c2.3-1.6 4.9-1.6 7.5 0v10c-2.6-1.6-5.2-1.6-7.5 0Z" />
-        <path {...commonStroke} d="M23.5 11.5c-2.3-1.6-4.9-1.6-7.5 0v10c2.6-1.6 5.2-1.6 7.5 0Z" />
-      </>
-    ),
-    'IMAGEM PESSOAL': (
-      <>
-        <circle cx="16" cy="13.5" r="3.5" {...commonStroke} />
-        <path {...commonStroke} d="M10.5 24c1.3-2.8 3.2-4.2 5.5-4.2s4.2 1.4 5.5 4.2" />
-        <rect x="7.5" y="7.5" width="17" height="17" rx="4" {...commonStroke} />
-      </>
-    ),
-    'FAMÍLIA': (
-      <>
-        <circle cx="12" cy="14" r="2.5" {...commonStroke} />
-        <circle cx="20" cy="14" r="2.5" {...commonStroke} />
-        <path {...commonStroke} d="M8.5 23c.8-2.7 2.2-4 3.5-4s2.7 1.3 3.5 4" />
-        <path {...commonStroke} d="M16.5 23c.8-2.7 2.2-4 3.5-4s2.7 1.3 3.5 4" />
-      </>
-    ),
-    'CRESCIMENTO PROFISSIONAL': (
-      <>
-        <path {...commonStroke} d="M10 22V16" />
-        <path {...commonStroke} d="M16 22V12" />
-        <path {...commonStroke} d="M22 22V9" />
-        <path {...commonStroke} d="m9 10 4 2 4-3 5 1" />
-      </>
-    ),
-    'FINANÇAS': (
-      <>
-        <path {...commonStroke} d="M16 8v16" />
-        <path {...commonStroke} d="M20.2 11.4c-.8-1.2-2.4-2-4.2-2-2.4 0-4.3 1.4-4.3 3.3 0 4.8 8.6 2.1 8.6 6 0 1.9-1.9 3.3-4.3 3.3-1.9 0-3.4-.8-4.3-2" />
-      </>
-    ),
-    'NETWORKING E CONTRIBUIÇÃO': (
-      <>
-        <circle cx="9.5" cy="12" r="2" {...commonStroke} />
-        <circle cx="22.5" cy="12" r="2" {...commonStroke} />
-        <circle cx="16" cy="22" r="2" {...commonStroke} />
-        <path {...commonStroke} d="m11.2 13.2 3.2 6.8" />
-        <path {...commonStroke} d="m20.8 13.2-3.2 6.8" />
-        <path {...commonStroke} d="M11.5 12h9" />
-      </>
-    ),
-    'META MAGNUS': (
-      <>
-        <circle cx="16" cy="16" r="8.5" {...commonStroke} />
-        <circle cx="16" cy="16" r="4.5" {...commonStroke} />
-        <circle cx="16" cy="16" r="1.8" fill={theme.accent} />
-      </>
-    ),
-    DEFAULT: <rect x="9" y="9" width="14" height="14" rx="2.5" {...commonStroke} />
-  };
-
-  return (
-    <div
-      className="w-16 h-16 mx-auto mb-4 rounded-2xl flex items-center justify-center shadow-lg"
-      style={{ background: `radial-gradient(circle at 30% 30%, ${theme.accent}33, ${theme.bg})` }}
-    >
-      <svg viewBox="0 0 32 32" className="w-10 h-10" role="img" aria-label={`Ícone do pilar ${pillar}`}>
-        {iconsByPillar[pillar] || iconsByPillar.DEFAULT}
-      </svg>
-    </div>
-  );
+const PILLAR_ICONS = {
+  'ESPIRITUALIDADE': '🙏',
+  'CUIDADOS COM A SAÚDE': '💪',
+  'EQUILÍBRIO EMOCIONAL': '🧘',
+  'LAZER': '🎯',
+  'GESTÃO DO TEMPO E ORGANIZAÇÃO': '⏰',
+  'DESENVOLVIMENTO INTELECTUAL': '📚',
+  'IMAGEM PESSOAL': '✨',
+  'FAMÍLIA': '👨‍👩‍👧‍👦',
+  'CRESCIMENTO PROFISSIONAL': '📈',
+  'FINANÇAS': '💰',
+  'NETWORKING E CONTRIBUIÇÃO': '🤝',
+  'META MAGNUS': '🎯'
 };
 
 const MIN_QUESTION_ANSWER_LENGTH = 50;
@@ -549,7 +437,7 @@ const FormPage = () => {
         className="space-y-6"
       >
         <div className="text-center mb-6">
-          <PillarStepIcon pillar={question.pillar} />
+          <span className="text-4xl mb-4 block">{PILLAR_ICONS[question.pillar] || '📋'}</span>
           <div className="inline-block px-4 py-1 rounded-full bg-primary/20 text-primary text-sm font-medium mb-4">
             Pilar {questionIndex + 1} de {questions.length}
           </div>
@@ -600,7 +488,7 @@ const FormPage = () => {
                 <img
                   src="/images/elios.gif"
                   alt="ELIOS"
-                  className="w-20 h-20 sm:w-12 sm:h-12 rounded-md object-cover shrink-0"
+                  className="w-20 h-20 sm:w-20 sm:h-20 rounded-md object-cover shrink-0"
                 />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
