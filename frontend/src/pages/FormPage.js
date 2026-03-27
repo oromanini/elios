@@ -49,9 +49,8 @@ const FormPage = () => {
   const [submitting, setSubmitting] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [aiAnalysis, setAiAnalysis] = useState('');
-  const [isUserTyping, setIsUserTyping] = useState(false);
+  const [helpRequested, setHelpRequested] = useState(false);
   const [isResponding, setIsResponding] = useState(false);
-  const typingTimeoutRef = useRef(null);
   const respondTimeoutRef = useRef(null);
   const previousAiAnalysisRef = useRef('');
   const profilePhotoInputRef = useRef(null);
@@ -70,9 +69,6 @@ const FormPage = () => {
 
   useEffect(() => {
     return () => {
-      if (typingTimeoutRef.current) {
-        clearTimeout(typingTimeoutRef.current);
-      }
       if (respondTimeoutRef.current) {
         clearTimeout(respondTimeoutRef.current);
       }
@@ -145,13 +141,13 @@ const FormPage = () => {
     }
     
     setAiAnalysis('');
-    setIsUserTyping(false);
+    setHelpRequested(false);
     setCurrentStep(prev => prev + 1);
   };
 
   const handleBack = () => {
     setAiAnalysis('');
-    setIsUserTyping(false);
+    setHelpRequested(false);
     setCurrentStep(prev => prev - 1);
   };
 
@@ -160,14 +156,8 @@ const FormPage = () => {
       ...prev,
       [questionId]: value
     }));
-
-    setIsUserTyping(true);
-    if (typingTimeoutRef.current) {
-      clearTimeout(typingTimeoutRef.current);
-    }
-    typingTimeoutRef.current = setTimeout(() => {
-      setIsUserTyping(false);
-    }, 1000);
+    setAiAnalysis('');
+    setHelpRequested(false);
   };
 
   const analyzeResponse = async () => {
@@ -176,8 +166,12 @@ const FormPage = () => {
     const question = questions[currentStep - 4];
     const answer = responses[question.id];
     
-    if (!answer || answer.trim().length < MIN_ANALYSIS_TRIGGER_LENGTH) return;
+    if (!answer || answer.trim().length < MIN_ANALYSIS_TRIGGER_LENGTH) {
+      toast.error(`Escreva pelo menos ${MIN_ANALYSIS_TRIGGER_LENGTH} caracteres para pedir ajuda.`);
+      return;
+    }
     
+    setHelpRequested(true);
     setAnalyzing(true);
     try {
       const response = await aiAPI.analyze({
@@ -457,20 +451,41 @@ const FormPage = () => {
             placeholder="Descreva detalhadamente sua situação atual e seus objetivos para os próximos 12 meses..."
             value={responses[question.id] || ''}
             onChange={(e) => handleResponseChange(question.id, e.target.value)}
-            onBlur={analyzeResponse}
             className="bg-slate-900/50 border-slate-700 text-white placeholder:text-slate-500 min-h-[200px] text-base"
             data-testid={`form-question-${questionIndex}`}
           />
 
+          <div className="flex justify-center">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={analyzeResponse}
+              disabled={analyzing}
+              className="gap-2"
+            >
+              {analyzing ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  ELIOS está analisando...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4" />
+                  Pedir ajuda ao ELIOS
+                </>
+              )}
+            </Button>
+          </div>
+
           {/* AI Analysis */}
-          {(isUserTyping || analyzing || aiAnalysis) && (
+          {helpRequested && (analyzing || aiAnalysis) && (
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               className="glass-card rounded-lg p-4 border-l-4 border-primary"
             >
               <div className="flex items-start gap-2 sm:gap-3">
-                <div className={`elios-robot elios-robot--${isResponding ? 'responding' : isUserTyping ? 'thinking' : 'idle'}`} aria-hidden="true">
+                <div className={`elios-robot elios-robot--${isResponding ? 'responding' : analyzing ? 'thinking' : 'idle'}`} aria-hidden="true">
                   <div className="elios-robot__head">
                     <div className="elios-robot__crest">
                       <span className="elios-robot__arrow" />
@@ -495,8 +510,6 @@ const FormPage = () => {
                       <Loader2 className="w-4 h-4 animate-spin" />
                       <span>Analisando sua resposta...</span>
                     </div>
-                  ) : isUserTyping && !aiAnalysis ? (
-                    <p className="text-slate-400 text-sm">Helios está acompanhando sua resposta em tempo real...</p>
                   ) : (
                     <p className="text-slate-300 text-sm">{aiAnalysis}</p>
                   )}
