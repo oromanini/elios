@@ -488,7 +488,7 @@ const FormPage = () => {
                 <img
                   src="/images/elios.gif"
                   alt="ELIOS"
-                  className="w-10 h-10 sm:w-12 sm:h-12 rounded-md object-cover shrink-0"
+                  className="w-20 h-20 sm:w-12 sm:h-12 rounded-md object-cover shrink-0"
                 />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
