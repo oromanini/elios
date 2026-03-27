@@ -39,6 +39,7 @@ const PILLAR_ICONS = {
 };
 
 const MIN_QUESTION_ANSWER_LENGTH = 50;
+const MIN_ANALYSIS_TRIGGER_LENGTH = 5;
 
 const FormPage = () => {
   const navigate = useNavigate();
@@ -175,7 +176,7 @@ const FormPage = () => {
     const question = questions[currentStep - 4];
     const answer = responses[question.id];
     
-    if (!answer || answer.trim().length < MIN_QUESTION_ANSWER_LENGTH) return;
+    if (!answer || answer.trim().length < MIN_ANALYSIS_TRIGGER_LENGTH) return;
     
     setAnalyzing(true);
     try {
