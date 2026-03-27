@@ -485,21 +485,11 @@ const FormPage = () => {
               className="glass-card rounded-lg p-4 border-l-4 border-primary"
             >
               <div className="flex items-start gap-2 sm:gap-3">
-                <div className={`elios-robot elios-robot--${isResponding ? 'responding' : analyzing ? 'thinking' : 'idle'}`} aria-hidden="true">
-                  <div className="elios-robot__head">
-                    <div className="elios-robot__crest">
-                      <span className="elios-robot__arrow" />
-                      <span className="elios-robot__arrow" />
-                    </div>
-                    <div className="elios-robot__visor">
-                      <div className="elios-robot__eyes">
-                        <span className="elios-robot__eye" />
-                        <span className="elios-robot__eye" />
-                      </div>
-                    </div>
-                    <span className="elios-robot__chin" />
-                  </div>
-                </div>
+                <img
+                  src="/images/elios.gif"
+                  alt="ELIOS"
+                  className="w-10 h-10 sm:w-12 sm:h-12 rounded-md object-cover shrink-0"
+                />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
                     <Sparkles className="w-4 h-4 text-amber-300 shrink-0" />
