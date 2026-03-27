@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, BackgroundTasks
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, BackgroundTasks, UploadFile, File, Form
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -6,6 +6,8 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 from pathlib import Path
+from io import BytesIO
+import json
 from pydantic import BaseModel, Field, ConfigDict, EmailStr
 from typing import List, Optional, Dict, Any
 import uuid
@@ -19,6 +21,7 @@ import secrets
 import string
 import asyncio
 import requests
+from PIL import Image, UnidentifiedImageError
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -44,6 +47,12 @@ SMTP_HOST = os.environ.get('SMTP_HOST', 'smtp.hostinger.com')
 SMTP_PORT = int(os.environ.get('SMTP_PORT', 465))
 SMTP_EMAIL = os.environ.get('SMTP_EMAIL', '')
 SMTP_PASSWORD = os.environ.get('SMTP_PASSWORD', '')
+
+# Upload Configuration
+ENV = os.environ.get('ENV', 'development').lower()
+UPLOAD_DIR_LOCAL = Path(os.environ.get('UPLOAD_DIR_LOCAL', ROOT_DIR / 'uploads/profile_photos'))
+GCS_BUCKET_NAME = os.environ.get('GCS_BUCKET_NAME', '')
+GCS_PUBLIC_BASE_URL = os.environ.get('GCS_PUBLIC_BASE_URL', '')
 
 # Security
 security = HTTPBearer()
@@ -115,6 +124,7 @@ class UserResponse(BaseModel):
     created_at: str
     form_completed: bool = False
     elios_summary: Optional[str] = None
+    profile_photo_url: Optional[str] = None
 
 class UserUpdate(BaseModel):
     full_name: Optional[str] = None
@@ -150,7 +160,36 @@ class FormResponseCreate(BaseModel):
 class FormSubmission(BaseModel):
     full_name: str
     email: EmailStr
+    date_of_birth: Optional[str] = None
+    profile_photo: Optional[UploadFile] = None
     responses: List[FormResponseCreate]
+
+    @classmethod
+    def as_form(
+        cls,
+        full_name: str = Form(...),
+        email: EmailStr = Form(...),
+        date_of_birth: Optional[str] = Form(None),
+        responses: str = Form(...),
+        profile_photo: Optional[UploadFile] = File(None)
+    ) -> "FormSubmission":
+        try:
+            parsed_responses = json.loads(responses)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=422, detail="Campo 'responses' inválido. Envie um JSON válido.") from exc
+
+        try:
+            response_items = [FormResponseCreate.model_validate(item) for item in parsed_responses]
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail="Formato de respostas inválido.") from exc
+
+        return cls(
+            full_name=full_name,
+            email=email,
+            date_of_birth=date_of_birth,
+            responses=response_items,
+            profile_photo=profile_photo
+        )
 
 class GoalCreate(BaseModel):
     pillar: str
@@ -221,6 +260,74 @@ def hash_password(password: str) -> str:
 def verify_password(password: str, hashed: str) -> bool:
     """Verify a password against its hash"""
     return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
+
+async def optimize_profile_picture(file: UploadFile) -> BytesIO:
+    """Validate and optimize a profile image before upload."""
+    allowed_types = {"image/jpeg", "image/png", "image/jpg"}
+    if file.content_type not in allowed_types:
+        raise HTTPException(status_code=415, detail="Formato de imagem inválido. Use JPEG ou PNG.")
+
+    raw_bytes = await file.read()
+    max_size_bytes = 5 * 1024 * 1024
+    if len(raw_bytes) > max_size_bytes:
+        raise HTTPException(status_code=413, detail="Imagem excede o tamanho máximo de 5MB.")
+
+    try:
+        image = Image.open(BytesIO(raw_bytes))
+    except UnidentifiedImageError as exc:
+        raise HTTPException(status_code=415, detail="Arquivo enviado não é uma imagem válida.") from exc
+
+    image = image.convert("RGB")
+    width, height = image.size
+    side = min(width, height)
+    left = (width - side) // 2
+    top = (height - side) // 2
+    image = image.crop((left, top, left + side, top + side))
+    image = image.resize((400, 400), Image.Resampling.LANCZOS)
+
+    optimized_bytes = BytesIO()
+    image.save(optimized_bytes, format="JPEG", quality=80, optimize=True)
+    optimized_bytes.seek(0)
+    await file.close()
+    return optimized_bytes
+
+async def upload_profile_picture(user_id: str, file: UploadFile) -> str:
+    """Upload optimized profile image to local storage or GCS based on ENV."""
+    optimized_bytes = await optimize_profile_picture(file)
+    filename = f"{user_id}_profile.jpg"
+
+    if ENV == "development":
+        UPLOAD_DIR_LOCAL.mkdir(parents=True, exist_ok=True)
+        local_path = UPLOAD_DIR_LOCAL / filename
+        with open(local_path, "wb") as local_file:
+            local_file.write(optimized_bytes.getbuffer())
+        return f"/uploads/profile_photos/{filename}"
+
+    if ENV == "production":
+        if not GCS_BUCKET_NAME:
+            raise HTTPException(status_code=500, detail="GCS_BUCKET_NAME não configurado em produção.")
+
+        try:
+            from google.cloud import storage
+        except ImportError as exc:
+            raise HTTPException(status_code=500, detail="Dependência google-cloud-storage não instalada.") from exc
+
+        storage_client = storage.Client()
+        bucket = storage_client.bucket(GCS_BUCKET_NAME)
+        object_path = f"profile_photos/{filename}"
+        blob = bucket.blob(object_path)
+
+        blob.upload_from_file(optimized_bytes, content_type="image/jpeg")
+        try:
+            blob.make_public()
+        except Exception as make_public_error:
+            logger.warning(f"Não foi possível aplicar ACL pública no GCS: {make_public_error}")
+
+        if GCS_PUBLIC_BASE_URL:
+            return f"{GCS_PUBLIC_BASE_URL.rstrip('/')}/{object_path}"
+        return blob.public_url
+
+    raise HTTPException(status_code=500, detail="ENV inválido para upload de imagem.")
 
 def create_token(user_id: str, email: str, role: str) -> str:
     """Create a JWT token"""
@@ -838,7 +945,7 @@ async def delete_question(question_id: str, admin: dict = Depends(get_admin_user
 # ---- FORM SUBMISSION ROUTES ----
 
 @api_router.post("/form/submit")
-async def submit_form(submission: FormSubmission, background_tasks: BackgroundTasks):
+async def submit_form(submission: FormSubmission = Depends(FormSubmission.as_form), background_tasks: BackgroundTasks = None):
     """Submit the complete form and create user"""
     # Check if email already exists
     existing = await db.users.find_one({"email": submission.email})
@@ -848,16 +955,22 @@ async def submit_form(submission: FormSubmission, background_tasks: BackgroundTa
     # Generate password and create user
     password = generate_password()
     user_id = str(uuid.uuid4())
+    profile_photo_url = None
+
+    if submission.profile_photo:
+        profile_photo_url = await upload_profile_picture(user_id, submission.profile_photo)
     
     user_doc = {
         "id": user_id,
         "full_name": submission.full_name,
         "email": submission.email,
+        "date_of_birth": submission.date_of_birth,
         "password_hash": hash_password(password),
         "role": "DEFAULT",
         "is_active": False,  # Inactive until admin approves
         "form_completed": True,
         "elios_summary": None,
+        "profile_photo_url": profile_photo_url,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     
@@ -875,7 +988,8 @@ async def submit_form(submission: FormSubmission, background_tasks: BackgroundTa
         }
         await db.form_responses.insert_one(response_doc)
 
-    background_tasks.add_task(generate_elios_summary, user_id)
+    if background_tasks:
+        background_tasks.add_task(generate_elios_summary, user_id)
     
     # Send welcome email
     email_sent = send_welcome_email(submission.email, submission.full_name, password)

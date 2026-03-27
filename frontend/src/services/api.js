@@ -51,7 +51,11 @@ export const questionsAPI = {
 
 // Form API
 export const formAPI = {
-  submit: (data) => api.post('/form/submit', data),
+  submit: (data) => api.post('/form/submit', data, {
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    }
+  }),
   getResponses: () => api.get('/form/responses'),
   updateResponse: (id, data) => api.put(`/form/responses/${id}`, data)
 };
