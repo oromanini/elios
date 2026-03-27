@@ -38,6 +38,8 @@ const PILLAR_ICONS = {
   'META MAGNUS': '🎯'
 };
 
+const MIN_QUESTION_ANSWER_LENGTH = 50;
+
 const FormPage = () => {
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(0);
@@ -134,8 +136,9 @@ const FormPage = () => {
     }
     if (currentStep >= 4) {
       const question = questions[currentStep - 4];
-      if (!responses[question.id]?.trim()) {
-        toast.error('Por favor, responda a pergunta antes de continuar');
+      const answer = responses[question.id]?.trim() || '';
+      if (answer.length < MIN_QUESTION_ANSWER_LENGTH) {
+        toast.error(`Por favor, escreva pelo menos ${MIN_QUESTION_ANSWER_LENGTH} caracteres para continuar`);
         return;
       }
     }
@@ -172,7 +175,7 @@ const FormPage = () => {
     const question = questions[currentStep - 4];
     const answer = responses[question.id];
     
-    if (!answer || answer.length < 20) return;
+    if (!answer || answer.trim().length < MIN_QUESTION_ANSWER_LENGTH) return;
     
     setAnalyzing(true);
     try {
