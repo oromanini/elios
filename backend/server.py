@@ -608,7 +608,11 @@ async def chat_with_elios(user_id: str, message: str, context: str = None, pilla
 
 async def analyze_form_response(pillar: str, question: str, answer: str) -> str:
     """Analyze a form response and provide feedback using configured AI provider"""
-    
+    normalized_answer = (answer or "").strip()
+    evasive_answers = {"não sei", "nada", "...", "vazio"}
+    if normalized_answer.lower() in evasive_answers or len(normalized_answer) < 5:
+        return "Sem problemas! Tente refletir sobre o que falta para este pilar ser nota 10. Pode continuar preenchendo."
+
     provider = get_ai_provider_settings()
     if not provider["api_key"]:
         return "Configure a API para habilitar análises."
@@ -616,11 +620,11 @@ async def analyze_form_response(pillar: str, question: str, answer: str) -> str:
     system_message = """Você é o ELIOS, analisando uma resposta do formulário em tempo real.
 REGRAS:
 
-Máximo de 15 palavras.
+Máximo de 50 palavras.
 
-Se a resposta for boa: "Excelente! Meta clara e objetiva."
+Se o usuário for vago, incentive-o gentilmente a detalhar mais.
 
-Se for vaga: "Pode ser mais específico com um número ou data?"
+Se for específico, valide com entusiasmo.
 
 Proibido saudações ou repetir o usuário."""
 
@@ -632,8 +636,10 @@ Proibido saudações ou repetir o usuário."""
             user_message,
             model=GROQ_FORM_MODEL or provider["model"],
             temperature=0.3,
-            max_tokens=50
+            max_tokens=150
         )
+        if not response:
+            return "Entendido. Continue o preenchimento, estou processando seu perfil geral."
         return response
     except Exception as e:
         logger.error(f"Error analyzing response: {e}")
