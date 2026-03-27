@@ -311,7 +311,7 @@ const FormPage = () => {
               animate={{ opacity: 1, y: 0 }}
               className="glass-card rounded-lg p-4 border-l-4 border-primary"
             >
-              <div className="flex items-start gap-3">
+              <div className="flex items-start gap-2 sm:gap-3">
                 <div className={`elios-robot elios-robot--${isResponding ? 'responding' : isUserTyping ? 'thinking' : 'idle'}`} aria-hidden="true">
                   <div className="elios-robot__head">
                     <div className="elios-robot__crest">
@@ -325,9 +325,9 @@ const FormPage = () => {
                     <span className="elios-robot__led" />
                   </div>
                 </div>
-                <div className="flex-1">
+                <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
-                    <Sparkles className="w-4 h-4 text-primary" />
+                    <Sparkles className="w-4 h-4 text-primary shrink-0" />
                     <p className="text-primary text-sm font-medium">ELIOS Analisa:</p>
                   </div>
                   {analyzing ? (
