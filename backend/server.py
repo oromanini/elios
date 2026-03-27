@@ -762,10 +762,16 @@ async def root():
 
 @api_router.post("/auth/register")
 async def register_user(user: UserCreate):
-    """Register a new user (admin only creates users with password)"""
+    """Register a new default user (public endpoint)."""
     existing = await db.users.find_one({"email": user.email})
     if existing:
         raise HTTPException(status_code=400, detail="Email já cadastrado")
+
+    if user.role != "DEFAULT":
+        raise HTTPException(
+            status_code=403,
+            detail="Cadastro público permite apenas usuários com perfil DEFAULT",
+        )
     
     password = user.password or generate_password()
     
@@ -774,8 +780,8 @@ async def register_user(user: UserCreate):
         "full_name": user.full_name,
         "email": user.email,
         "password_hash": hash_password(password),
-        "role": user.role,
-        "is_active": True if user.role == "ADMIN" else False,
+        "role": "DEFAULT",
+        "is_active": False,
         "form_completed": False,
         "elios_summary": None,
         "created_at": datetime.now(timezone.utc).isoformat()

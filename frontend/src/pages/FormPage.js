@@ -51,11 +51,13 @@ const FormPage = () => {
   const typingTimeoutRef = useRef(null);
   const respondTimeoutRef = useRef(null);
   const previousAiAnalysisRef = useRef('');
+  const profilePhotoInputRef = useRef(null);
   
   // Form data
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [profilePhoto, setProfilePhoto] = useState(null);
+  const [profilePhotoPreview, setProfilePhotoPreview] = useState('');
   const [birthDate, setBirthDate] = useState('');
   const [responses, setResponses] = useState({});
 
@@ -73,6 +75,20 @@ const FormPage = () => {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!profilePhoto) {
+      setProfilePhotoPreview('');
+      return undefined;
+    }
+
+    const previewUrl = URL.createObjectURL(profilePhoto);
+    setProfilePhotoPreview(previewUrl);
+
+    return () => {
+      URL.revokeObjectURL(previewUrl);
+    };
+  }, [profilePhoto]);
 
   useEffect(() => {
     if (!aiAnalysis || aiAnalysis === previousAiAnalysisRef.current) return;
@@ -202,6 +218,25 @@ const FormPage = () => {
     }
   };
 
+  const handlePhotoSelect = (file) => {
+    if (!file) {
+      setProfilePhoto(null);
+      return;
+    }
+
+    if (!['image/jpeg', 'image/png'].includes(file.type)) {
+      toast.error('Formato inválido. Use apenas JPEG ou PNG.');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('A foto deve ter no máximo 5MB.');
+      return;
+    }
+
+    setProfilePhoto(file);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -305,14 +340,49 @@ const FormPage = () => {
             <Label htmlFor="profilePhoto" className="text-slate-400 uppercase text-xs tracking-wide">
               Upload de foto (JPEG/PNG, até 5MB)
             </Label>
-            <Input
+            <input
               id="profilePhoto"
+              ref={profilePhotoInputRef}
               type="file"
               accept="image/jpeg,image/png"
-              onChange={(e) => setProfilePhoto(e.target.files?.[0] || null)}
-              className="bg-slate-900/50 border-slate-700 text-white file:bg-primary/20 file:text-primary file:border-0 file:rounded-md file:px-3 file:py-2"
+              onChange={(e) => handlePhotoSelect(e.target.files?.[0] || null)}
+              className="hidden"
               data-testid="form-photo"
             />
+            <button
+              type="button"
+              onClick={() => profilePhotoInputRef.current?.click()}
+              className="w-full group rounded-2xl border border-slate-700/80 bg-gradient-to-br from-slate-900/80 via-slate-900/60 to-slate-950/90 p-5 text-left transition-all hover:border-primary/50 hover:shadow-[0_0_0_1px_rgba(56,189,248,0.2)]"
+            >
+              <div className="flex items-start gap-4">
+                {profilePhotoPreview ? (
+                  <img
+                    src={profilePhotoPreview}
+                    alt="Prévia da foto de perfil"
+                    className="w-16 h-16 rounded-xl object-cover border border-primary/40 shadow-lg shadow-primary/10"
+                  />
+                ) : (
+                  <div className="w-16 h-16 rounded-xl border border-dashed border-slate-600 bg-slate-800/60 flex items-center justify-center">
+                    <Camera className="w-7 h-7 text-slate-400 group-hover:text-primary transition-colors" />
+                  </div>
+                )}
+
+                <div className="flex-1 min-w-0">
+                  <p className="text-white font-semibold text-base mb-1">
+                    {profilePhoto ? 'Foto selecionada com sucesso' : 'Escolher foto de perfil'}
+                  </p>
+                  <p className="text-slate-400 text-sm mb-2">
+                    {profilePhoto
+                      ? profilePhoto.name
+                      : 'Clique aqui para enviar uma imagem com boa iluminação.'}
+                  </p>
+                  <div className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-800/80 px-3 py-1 text-xs text-slate-300">
+                    {profilePhoto ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> : <Camera className="w-3.5 h-3.5 text-primary" />}
+                    {profilePhoto ? 'Pronto para envio' : 'JPEG/PNG • até 5MB'}
+                  </div>
+                </div>
+              </div>
+            </button>
             <p className="text-xs text-slate-500">
               A imagem será otimizada automaticamente para avatar.
             </p>
