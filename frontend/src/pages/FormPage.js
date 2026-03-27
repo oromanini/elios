@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import Logo from '../components/Logo';
@@ -44,6 +44,11 @@ const FormPage = () => {
   const [submitting, setSubmitting] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [aiAnalysis, setAiAnalysis] = useState('');
+  const [isUserTyping, setIsUserTyping] = useState(false);
+  const [isResponding, setIsResponding] = useState(false);
+  const typingTimeoutRef = useRef(null);
+  const respondTimeoutRef = useRef(null);
+  const previousAiAnalysisRef = useRef('');
   
   // Form data
   const [fullName, setFullName] = useState('');
@@ -53,6 +58,32 @@ const FormPage = () => {
   useEffect(() => {
     loadQuestions();
   }, []);
+
+  useEffect(() => {
+    return () => {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+      if (respondTimeoutRef.current) {
+        clearTimeout(respondTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!aiAnalysis || aiAnalysis === previousAiAnalysisRef.current) return;
+
+    setIsResponding(true);
+    if (respondTimeoutRef.current) {
+      clearTimeout(respondTimeoutRef.current);
+    }
+
+    respondTimeoutRef.current = setTimeout(() => {
+      setIsResponding(false);
+    }, 900);
+
+    previousAiAnalysisRef.current = aiAnalysis;
+  }, [aiAnalysis]);
 
   const loadQuestions = async () => {
     try {
@@ -86,11 +117,13 @@ const FormPage = () => {
     }
     
     setAiAnalysis('');
+    setIsUserTyping(false);
     setCurrentStep(prev => prev + 1);
   };
 
   const handleBack = () => {
     setAiAnalysis('');
+    setIsUserTyping(false);
     setCurrentStep(prev => prev - 1);
   };
 
@@ -99,6 +132,14 @@ const FormPage = () => {
       ...prev,
       [questionId]: value
     }));
+
+    setIsUserTyping(true);
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+    typingTimeoutRef.current = setTimeout(() => {
+      setIsUserTyping(false);
+    }, 1000);
   };
 
   const analyzeResponse = async () => {
@@ -270,10 +311,25 @@ const FormPage = () => {
               animate={{ opacity: 1, y: 0 }}
               className="glass-card rounded-lg p-4 border-l-4 border-primary"
             >
-              <div className="flex items-start gap-3">
-                <Sparkles className="w-5 h-5 text-primary mt-0.5" />
-                <div className="flex-1">
-                  <p className="text-primary text-sm font-medium mb-1">ELIOS Analisa:</p>
+              <div className="flex items-start gap-2 sm:gap-3">
+                <div className={`elios-robot elios-robot--${isResponding ? 'responding' : isUserTyping ? 'thinking' : 'idle'}`} aria-hidden="true">
+                  <div className="elios-robot__head">
+                    <div className="elios-robot__crest">
+                      <span className="elios-robot__arrow" />
+                      <span className="elios-robot__arrow" />
+                    </div>
+                    <div className="elios-robot__eyes">
+                      <span className="elios-robot__eye" />
+                      <span className="elios-robot__eye" />
+                    </div>
+                    <span className="elios-robot__led" />
+                  </div>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Sparkles className="w-4 h-4 text-primary shrink-0" />
+                    <p className="text-primary text-sm font-medium">ELIOS Analisa:</p>
+                  </div>
                   {analyzing ? (
                     <div className="flex items-center gap-2 text-slate-400">
                       <Loader2 className="w-4 h-4 animate-spin" />
