@@ -6,7 +6,11 @@ on:
   workflow_dispatch:
 
 env:
+  PROJECT_ID: elios-492418
   REGION: us-central1
+  # Substitui o 123456789012 pelo número que aparece no teu painel do Google
+  WIF_PROVIDER: projects/123456789012/locations/global/workloadIdentityPools/elios-wif-pool/providers/elios-wif-provider
+  SA_EMAIL: elios-deployer@elios-492418.iam.gserviceaccount.com
   REPOSITORY: elios
   BACKEND_SERVICE: elios-api
   FRONTEND_SERVICE: elios-web
@@ -25,13 +29,13 @@ jobs:
       - name: Authenticate to Google Cloud (WIF)
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
-          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.SA_EMAIL }}
 
       - name: Setup gcloud
         uses: google-github-actions/setup-gcloud@v2
         with:
-          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          project_id: ${{ env.PROJECT_ID }}
 
       - name: Configure Docker auth for Artifact Registry
         run: gcloud auth configure-docker "${{ env.REGION }}-docker.pkg.dev" --quiet
@@ -40,7 +44,7 @@ jobs:
         env:
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          BACKEND_IMAGE="${{ env.REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPOSITORY }}/backend:${IMAGE_TAG}"
+          BACKEND_IMAGE="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/backend:${IMAGE_TAG}"
           docker build -t "${BACKEND_IMAGE}" ./backend
           docker push "${BACKEND_IMAGE}"
           echo "BACKEND_IMAGE=${BACKEND_IMAGE}" >> "$GITHUB_ENV"
@@ -48,7 +52,7 @@ jobs:
       - name: Deploy backend to Cloud Run
         run: |
           gcloud run deploy "${{ env.BACKEND_SERVICE }}" \
-            --project="${{ secrets.GCP_PROJECT_ID }}" \
+            --project="${{ env.PROJECT_ID }}" \
             --region="${{ env.REGION }}" \
             --platform=managed \
             --allow-unauthenticated \
@@ -57,14 +61,14 @@ jobs:
 
       - name: Capture backend URL
         run: |
-          BACKEND_URL="$(gcloud run services describe "${{ env.BACKEND_SERVICE }}" --project="${{ secrets.GCP_PROJECT_ID }}" --region="${{ env.REGION }}" --format='value(status.url)')"
+          BACKEND_URL="$(gcloud run services describe "${{ env.BACKEND_SERVICE }}" --project="${{ env.PROJECT_ID }}" --region="${{ env.REGION }}" --format='value(status.url)')"
           echo "BACKEND_URL=${BACKEND_URL}" >> "$GITHUB_ENV"
 
       - name: Build and push frontend image
         env:
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          FRONTEND_IMAGE="${{ env.REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPOSITORY }}/frontend:${IMAGE_TAG}"
+          FRONTEND_IMAGE="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/frontend:${IMAGE_TAG}"
           docker build \
             --build-arg VITE_API_URL="${{ env.BACKEND_URL }}" \
             -t "${FRONTEND_IMAGE}" \
@@ -75,7 +79,7 @@ jobs:
       - name: Deploy frontend to Cloud Run
         run: |
           gcloud run deploy "${{ env.FRONTEND_SERVICE }}" \
-            --project="${{ secrets.GCP_PROJECT_ID }}" \
+            --project="${{ env.PROJECT_ID }}" \
             --region="${{ env.REGION }}" \
             --platform=managed \
             --allow-unauthenticated \
