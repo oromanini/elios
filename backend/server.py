@@ -51,8 +51,11 @@ SMTP_PASSWORD = os.environ.get('SMTP_PASSWORD', '')
 # Upload Configuration
 ENV = os.environ.get('ENV', 'development').lower()
 UPLOAD_DIR_LOCAL = Path(os.environ.get('UPLOAD_DIR_LOCAL', ROOT_DIR / 'uploads/profile_photos'))
-GCS_BUCKET_NAME = os.environ.get('GCS_BUCKET_NAME', '')
-GCS_PUBLIC_BASE_URL = os.environ.get('GCS_PUBLIC_BASE_URL', '')
+R2_ACCESS_KEY = os.environ.get('R2_ACCESS_KEY', '')
+R2_SECRET_KEY = os.environ.get('R2_SECRET_KEY', '')
+R2_ENDPOINT = os.environ.get('R2_ENDPOINT', '')
+R2_BUCKET_NAME = os.environ.get('R2_BUCKET_NAME', '')
+R2_PUBLIC_BASE_URL = os.environ.get('R2_PUBLIC_BASE_URL', '')
 
 # Security
 security = HTTPBearer()
@@ -292,7 +295,7 @@ async def optimize_profile_picture(file: UploadFile) -> BytesIO:
     return optimized_bytes
 
 async def upload_profile_picture(user_id: str, file: UploadFile) -> str:
-    """Upload optimized profile image to local storage or GCS based on ENV."""
+    """Upload optimized profile image to local storage (dev) or Cloudflare R2 (prod)."""
     optimized_bytes = await optimize_profile_picture(file)
     filename = f"{user_id}_profile.jpg"
 
@@ -304,28 +307,38 @@ async def upload_profile_picture(user_id: str, file: UploadFile) -> str:
         return f"/uploads/profile_photos/{filename}"
 
     if ENV == "production":
-        if not GCS_BUCKET_NAME:
-            raise HTTPException(status_code=500, detail="GCS_BUCKET_NAME não configurado em produção.")
+        if not all([R2_ACCESS_KEY, R2_SECRET_KEY, R2_ENDPOINT, R2_BUCKET_NAME]):
+            raise HTTPException(
+                status_code=500,
+                detail="R2_ACCESS_KEY, R2_SECRET_KEY, R2_ENDPOINT e R2_BUCKET_NAME são obrigatórios em produção.",
+            )
 
         try:
-            from google.cloud import storage
+            import boto3
         except ImportError as exc:
-            raise HTTPException(status_code=500, detail="Dependência google-cloud-storage não instalada.") from exc
+            raise HTTPException(status_code=500, detail="Dependência boto3 não instalada.") from exc
 
-        storage_client = storage.Client()
-        bucket = storage_client.bucket(GCS_BUCKET_NAME)
         object_path = f"profile_photos/{filename}"
-        blob = bucket.blob(object_path)
 
-        blob.upload_from_file(optimized_bytes, content_type="image/jpeg")
-        try:
-            blob.make_public()
-        except Exception as make_public_error:
-            logger.warning(f"Não foi possível aplicar ACL pública no GCS: {make_public_error}")
+        s3_client = boto3.client(
+            "s3",
+            endpoint_url=R2_ENDPOINT.rstrip("/"),
+            aws_access_key_id=R2_ACCESS_KEY,
+            aws_secret_access_key=R2_SECRET_KEY,
+            region_name="auto",
+        )
 
-        if GCS_PUBLIC_BASE_URL:
-            return f"{GCS_PUBLIC_BASE_URL.rstrip('/')}/{object_path}"
-        return blob.public_url
+        s3_client.upload_fileobj(
+            optimized_bytes,
+            R2_BUCKET_NAME,
+            object_path,
+            ExtraArgs={"ContentType": "image/jpeg"},
+        )
+
+        if R2_PUBLIC_BASE_URL:
+            return f"{R2_PUBLIC_BASE_URL.rstrip('/')}/{object_path}"
+
+        return f"{R2_ENDPOINT.rstrip('/')}/{R2_BUCKET_NAME}/{object_path}"
 
     raise HTTPException(status_code=500, detail="ENV inválido para upload de imagem.")
 

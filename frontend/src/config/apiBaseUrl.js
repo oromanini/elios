@@ -1,5 +1,13 @@
 const trimTrailingSlash = (value) => value.replace(/\/+$/, '');
 
+const readViteEnv = () => {
+  try {
+    return import.meta.env?.VITE_API_URL?.trim();
+  } catch (error) {
+    return '';
+  }
+};
+
 const getBackendUrlFromBrowserHost = () => {
   if (typeof window === 'undefined') {
     return 'http://localhost:8000';
@@ -15,7 +23,7 @@ const getBackendUrlFromBrowserHost = () => {
 };
 
 export const getBackendBaseUrl = () => {
-  const configuredUrl = process.env.REACT_APP_BACKEND_URL?.trim();
+  const configuredUrl = readViteEnv() || process.env.REACT_APP_BACKEND_URL?.trim();
 
   if (configuredUrl) {
     return trimTrailingSlash(configuredUrl);
@@ -23,7 +31,7 @@ export const getBackendBaseUrl = () => {
 
   const fallbackUrl = getBackendUrlFromBrowserHost();
   console.warn(
-    `[ELIOS] REACT_APP_BACKEND_URL não configurada. Usando fallback: ${fallbackUrl}`
+    `[ELIOS] VITE_API_URL não configurada. Usando fallback: ${fallbackUrl}`
   );
 
   return fallbackUrl;
