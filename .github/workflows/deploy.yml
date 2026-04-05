@@ -8,8 +8,7 @@ on:
 env:
   PROJECT_ID: elios-492418
   REGION: us-central1
-  # Substitui o 123456789012 pelo número que aparece no teu painel do Google
-  WIF_PROVIDER: projects/123456789012/locations/global/workloadIdentityPools/elios-wif-pool/providers/elios-wif-provider
+  WIF_PROVIDER: projects/513240742946/locations/global/workloadIdentityPools/elios-wif-pool/providers/elios-wif-provider
   SA_EMAIL: elios-deployer@elios-492418.iam.gserviceaccount.com
   REPOSITORY: elios
   BACKEND_SERVICE: elios-api
