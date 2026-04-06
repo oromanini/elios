@@ -12,38 +12,24 @@ resource "google_artifact_registry_repository" "docker" {
   format        = "DOCKER"
 }
 
-resource "google_artifact_registry_repository_cleanup_policy" "keep_last_two_tagged" {
-  project    = var.project_id
-  location   = google_artifact_registry_repository.docker.location
-  repository = google_artifact_registry_repository.docker.repository_id
+# resource "google_artifact_registry_repository_cleanup_policy" "keep_last_two_tagged" {
+#   project    = var.project_id
+#   location   = google_artifact_registry_repository.docker.location
+#   repository = google_artifact_registry_repository.docker.repository_id
 
-  cleanup_policy_id = "keep-last-2-tagged"
-  action            = "KEEP"
+#   cleanup_policy_id = "keep-last-2-tagged"
+#   action            = "KEEP"
 
-  condition {
-    tag_state = "TAGGED"
-  }
+#   condition {
+#     tag_state = "TAGGED"
+#   }
 
-  most_recent_versions {
-    keep_count = 2
-  }
-}
+#   most_recent_versions {
+#     keep_count = 2
+#   }
+# }
 
-resource "google_artifact_registry_repository_cleanup_policy" "delete_old_tagged" {
-  project    = var.project_id
-  location   = google_artifact_registry_repository.docker.location
-  repository = google_artifact_registry_repository.docker.repository_id
 
-  cleanup_policy_id = "delete-older-tagged"
-  action            = "DELETE"
-
-  condition {
-    tag_state  = "TAGGED"
-    older_than = "1d"
-  }
-
-  depends_on = [google_artifact_registry_repository_cleanup_policy.keep_last_two_tagged]
-}
 
 resource "google_service_account" "github_actions" {
   account_id   = "github-actions-deployer"
@@ -104,6 +90,7 @@ resource "google_cloud_run_v2_service" "backend" {
   name     = local.backend_service_name
   location = var.region
   ingress  = "INGRESS_TRAFFIC_ALL"
+  deletion_protection = false 
 
   template {
     service_account = google_service_account.github_actions.email
@@ -187,6 +174,7 @@ resource "google_cloud_run_v2_service" "frontend" {
   name     = local.frontend_service_name
   location = var.region
   ingress  = "INGRESS_TRAFFIC_ALL"
+  deletion_protection = false
 
   template {
     service_account = google_service_account.github_actions.email
