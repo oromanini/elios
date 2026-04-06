@@ -81,7 +81,5 @@ jobs:
             -var="r2_secret_key=${{ secrets.R2_SECRET_KEY }}" \
             -var="r2_endpoint=${{ secrets.R2_ENDPOINT }}" \
             -var="r2_bucket_name=${{ secrets.R2_BUCKET_NAME }}" \
-            -var="jwt_secret=${{ secrets.JWT_SECRET }}" \
-            -var="groq_api_key=${{ secrets.GROQ_API_KEY }}" \
             -var="user=${{ secrets.USER }}" \
             -var="password=${{ secrets.PASSWORD }}"
