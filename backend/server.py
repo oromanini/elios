@@ -837,7 +837,8 @@ Regras:
 - is_satisfactory=true somente se a resposta estiver condizente com o pilar E tiver clareza prática.
 - detected_goals deve conter apenas metas detectáveis no texto do usuário.
 - Se não houver meta detectável, retorne lista vazia.
-- No feedback, deixe claro se a resposta está boa ou precisa melhorar.
+- Se a resposta estiver boa, use feedback positivo e encorajador.
+- Se a resposta precisar melhorar, deixe explícito que a pessoa precisa listar metas concretas.
 - objectives deve ter de 1 a 4 itens."""
 
     user_message = f"Pilar: {pillar}\nPergunta: {question}\nResposta do usuário: {answer}"
@@ -879,10 +880,25 @@ Regras:
         has_goal = len(detected_goals) > 0
         can_proceed = is_satisfactory and has_goal
 
-        if not feedback:
-            feedback = "Sua resposta está boa." if can_proceed else "Sua resposta precisa melhorar antes de avançar."
-        if not objectives:
-            objectives = ["Inclua ao menos uma ação concreta para este pilar."]
+        if can_proceed:
+            feedback = (
+                "Sua resposta está muito boa. Elencou suas dificuldades e definiu metas para enfrentá-las. "
+                "Continue assim nos demais pilares."
+            )
+            objectives = [goal.description for goal in detected_goals[:4]]
+        else:
+            if not feedback:
+                feedback = "Sua resposta precisa melhorar antes de avançar."
+            if not objectives:
+                objectives = [
+                    "Defina uma ação concreta para este pilar.",
+                    "Adicione frequência ou prazo para execução."
+                ]
+            if not has_goal:
+                objectives = [
+                    "Liste metas claras para este pilar (ex.: ação + frequência/prazo).",
+                    "Reescreva sua resposta incluindo pelo menos uma meta mensurável."
+                ]
 
         return AnalyzeResponseResult(
             feedback=feedback,
@@ -898,12 +914,26 @@ Regras:
         fallback_has_goal = bool(re.search(r"\b(di[aá]rio|semana|vezes|minutos?|horas?|todo dia|prazo)\b", normalized_answer.lower()))
         fallback_satisfactory = len(normalized_answer) >= 50
         fallback_can_proceed = fallback_has_goal and fallback_satisfactory
-        return AnalyzeResponseResult(
-            feedback="Sua resposta está boa." if fallback_can_proceed else "Sua resposta precisa melhorar com mais detalhes práticos.",
-            objectives=[
+        fallback_objectives = (
+            [normalized_answer[:180]]
+            if fallback_can_proceed else
+            [
                 "Defina uma ação concreta para este pilar.",
                 "Adicione frequência ou prazo para execução."
-            ],
+            ]
+        )
+        if not fallback_has_goal:
+            fallback_objectives = [
+                "Liste metas claras para este pilar (ex.: ação + frequência/prazo).",
+                "Reescreva sua resposta incluindo pelo menos uma meta mensurável."
+            ]
+        return AnalyzeResponseResult(
+            feedback=(
+                "Sua resposta está muito boa. Elencou suas dificuldades e definiu metas para enfrentá-las. Continue assim nos demais pilares."
+                if fallback_can_proceed else
+                "Sua resposta precisa melhorar com metas mais claras para avançar."
+            ),
+            objectives=fallback_objectives,
             detected_goals=(
                 [DetectedGoal(pillar=pillar, title=f"Meta em {pillar}", description=normalized_answer[:180])]
                 if fallback_has_goal else []
