@@ -73,7 +73,7 @@ jobs:
           gcloud run deploy elios-api \
             --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/backend:latest \
             --region=${{ env.REGION }} \
-            --set-env-vars="MONGO_ATLAS_URI=${{ secrets.MONGO_ATLAS_URI }},ENV=production,GROQ_API_KEY=${{ secrets.GROQ_API_KEY }},GROQ_MODEL=${{ secrets.GROQ_MODEL || 'llama-3.3-70b-versatile' }}" \
+            --set-env-vars="MONGO_ATLAS_URI=${{ secrets.MONGO_ATLAS_URI }},ENV=production,GROQ_API_KEY=${{ secrets.GROQ_API_KEY }},GROQ_BASE_URL=${{ secrets.GROQ_BASE_URL }},GROQ_MODEL=${{ secrets.GROQ_MODEL }},GROQ_FORM_MODEL=${{ secrets.GROQ_FORM_MODEL }}" \
             --allow-unauthenticated
 
       - name: Deploy Frontend
