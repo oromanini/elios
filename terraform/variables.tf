@@ -52,7 +52,7 @@ variable "mongo_url" {
 variable "db_name" {
   description = "MongoDB database name"
   type        = string
-  default     = ""
+  default     = "elios"
 }
 
 variable "r2_access_key" {
@@ -78,6 +78,33 @@ variable "r2_endpoint" {
 variable "r2_bucket_name" {
   description = "Cloudflare R2 bucket name"
   type        = string
+  default     = ""
+}
+
+variable "jwt_secret" {
+  description = "JWT signing secret"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "groq_api_key" {
+  description = "Groq API key"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "user" {
+  description = "Application user"
+  type        = string
+  default     = ""
+}
+
+variable "password" {
+  description = "Application password"
+  type        = string
+  sensitive   = true
   default     = ""
 }
 

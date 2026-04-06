@@ -146,6 +146,26 @@ resource "google_cloud_run_v2_service" "backend" {
         name  = "R2_BUCKET_NAME"
         value = coalesce(var.r2_bucket_name, "dummy")
       }
+
+      env {
+        name  = "JWT_SECRET"
+        value = var.jwt_secret
+      }
+
+      env {
+        name  = "GROQ_API_KEY"
+        value = var.groq_api_key
+      }
+
+      env {
+        name  = "USER"
+        value = var.user
+      }
+
+      env {
+        name  = "PASSWORD"
+        value = var.password
+      }
     }
   }
 
