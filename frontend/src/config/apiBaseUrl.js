@@ -1,38 +1,10 @@
 const trimTrailingSlash = (value) => value.replace(/\/+$/, '');
 
-const readViteEnv = () => {
-  try {
-    return import.meta.env?.VITE_API_URL?.trim();
-  } catch (error) {
-    return '';
-  }
-};
+const DEFAULT_API_URL = 'https://elios-api-513240742946.us-central1.run.app';
 
-const getBackendUrlFromBrowserHost = () => {
-  if (typeof window === 'undefined') {
-    return 'http://localhost:8000';
-  }
+export const API_BASE_URL =
+  import.meta.env.VITE_API_URL ||
+  process.env.REACT_APP_BACKEND_URL ||
+  DEFAULT_API_URL;
 
-  const { protocol, hostname } = window.location;
-
-  if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    return 'http://localhost:8000';
-  }
-
-  return `${protocol}//${hostname}:8000`;
-};
-
-export const getBackendBaseUrl = () => {
-  const configuredUrl = readViteEnv() || process.env.REACT_APP_BACKEND_URL?.trim();
-
-  if (configuredUrl) {
-    return trimTrailingSlash(configuredUrl);
-  }
-
-  const fallbackUrl = getBackendUrlFromBrowserHost();
-  console.warn(
-    `[ELIOS] VITE_API_URL não configurada. Usando fallback: ${fallbackUrl}`
-  );
-
-  return fallbackUrl;
-};
+export const getBackendBaseUrl = () => trimTrailingSlash(API_BASE_URL);
