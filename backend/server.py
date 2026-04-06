@@ -21,6 +21,7 @@ import secrets
 import string
 import asyncio
 import requests
+import re
 from PIL import Image, UnidentifiedImageError
 
 ROOT_DIR = Path(__file__).parent
@@ -160,12 +161,19 @@ class FormResponseCreate(BaseModel):
     question_id: str
     answer: str
 
+class FormDetectedGoal(BaseModel):
+    question_id: str
+    pillar: str
+    title: str
+    description: str
+
 class FormSubmission(BaseModel):
     full_name: str
     email: EmailStr
     date_of_birth: Optional[str] = None
     profile_photo: Optional[UploadFile] = None
     responses: List[FormResponseCreate]
+    detected_goals: List[FormDetectedGoal] = Field(default_factory=list)
 
     @classmethod
     def as_form(
@@ -174,6 +182,7 @@ class FormSubmission(BaseModel):
         email: EmailStr = Form(...),
         date_of_birth: Optional[str] = Form(None),
         responses: str = Form(...),
+        detected_goals: Optional[str] = Form(None),
         profile_photo: Optional[UploadFile] = File(None)
     ) -> "FormSubmission":
         try:
@@ -186,11 +195,24 @@ class FormSubmission(BaseModel):
         except Exception as exc:
             raise HTTPException(status_code=422, detail="Formato de respostas inválido.") from exc
 
+        parsed_detected_goals: List[FormDetectedGoal] = []
+        if detected_goals:
+            try:
+                goals_payload = json.loads(detected_goals)
+            except json.JSONDecodeError as exc:
+                raise HTTPException(status_code=422, detail="Campo 'detected_goals' inválido. Envie um JSON válido.") from exc
+
+            try:
+                parsed_detected_goals = [FormDetectedGoal.model_validate(item) for item in goals_payload]
+            except Exception as exc:
+                raise HTTPException(status_code=422, detail="Formato de metas detectadas inválido.") from exc
+
         return cls(
             full_name=full_name,
             email=email,
             date_of_birth=date_of_birth,
             responses=response_items,
+            detected_goals=parsed_detected_goals,
             profile_photo=profile_photo
         )
 
@@ -241,6 +263,20 @@ class AnalyzeResponseRequest(BaseModel):
     pillar: str
     question: str
     answer: str
+
+class DetectedGoal(BaseModel):
+    pillar: str
+    title: str
+    description: str
+
+class AnalyzeResponseResult(BaseModel):
+    feedback: str
+    objectives: List[str]
+    detected_goals: List[DetectedGoal]
+    is_satisfactory: bool
+    has_goal: bool
+    can_proceed: bool
+    needs_improvement: bool
 
 class PasswordChange(BaseModel):
     current_password: str
@@ -726,27 +762,59 @@ async def chat_with_elios(user_id: str, message: str, context: str = None, pilla
     
     return response
 
-async def analyze_form_response(pillar: str, question: str, answer: str) -> str:
-    """Analyze a form response and provide feedback using configured AI provider"""
+def extract_json_block(raw_text: str) -> Optional[str]:
+    if not raw_text:
+        return None
+    stripped = raw_text.strip()
+    if stripped.startswith("{") and stripped.endswith("}"):
+        return stripped
+    match = re.search(r"\{[\s\S]*\}", stripped)
+    return match.group(0) if match else None
+
+async def analyze_form_response(pillar: str, question: str, answer: str) -> AnalyzeResponseResult:
+    """Analyze a form response and return structured validation for progression rules."""
     normalized_answer = (answer or "").strip()
-    evasive_answers = {"não sei", "nada", "...", "vazio"}
+    evasive_answers = {"não sei", "nada", "...", "vazio", "nao sei"}
     if normalized_answer.lower() in evasive_answers or len(normalized_answer) < 5:
-        return "Sem problemas! Tente refletir sobre o que falta para este pilar ser nota 10. Pode continuar preenchendo."
+        return AnalyzeResponseResult(
+            feedback="Sua resposta ainda está muito genérica. Adicione ações concretas para este pilar.",
+            objectives=["Descreva ao menos uma ação prática e mensurável.", "Inclua frequência ou prazo (ex.: diariamente, 3x por semana)."],
+            detected_goals=[],
+            is_satisfactory=False,
+            has_goal=False,
+            can_proceed=False,
+            needs_improvement=True,
+        )
 
     provider = get_ai_provider_settings()
     if not provider["api_key"]:
-        return "Configure a API para habilitar análises."
+        return AnalyzeResponseResult(
+            feedback="Análise de IA indisponível no momento.",
+            objectives=["Revise sua resposta para incluir ações concretas e mensuráveis."],
+            detected_goals=[],
+            is_satisfactory=False,
+            has_goal=False,
+            can_proceed=False,
+            needs_improvement=True,
+        )
     
-    system_message = """Você é o ELIOS, analisando uma resposta do formulário em tempo real.
-REGRAS:
+    system_message = """Você é o ELIOS, analisando resposta de formulário por pilar.
+Retorne SOMENTE JSON válido com este formato:
+{
+  "feedback": "string curta",
+  "objectives": ["meta objetiva 1", "meta objetiva 2"],
+  "is_satisfactory": true|false,
+  "detected_goals": [
+    {"title": "meta curta", "description": "ação concreta com frequência ou prazo"}
+  ]
+}
 
-Máximo de 50 palavras.
-
-Se o usuário for vago, incentive-o gentilmente a detalhar mais.
-
-Se for específico, valide com entusiasmo.
-
-Proibido saudações ou repetir o usuário."""
+Regras:
+- is_satisfactory=true somente se a resposta estiver condizente com o pilar E tiver clareza prática.
+- detected_goals deve conter apenas metas detectáveis no texto do usuário.
+- Se não houver meta detectável, retorne lista vazia.
+- No feedback, deixe claro se a resposta está boa ou precisa melhorar.
+- objectives deve ter de 1 a 4 itens."""
 
     user_message = f"Pilar: {pillar}\nPergunta: {question}\nResposta do usuário: {answer}"
 
@@ -759,11 +827,68 @@ Proibido saudações ou repetir o usuário."""
             max_tokens=150
         )
         if not response:
-            return "Entendido. Continue o preenchimento, estou processando seu perfil geral."
-        return response
+            raise ValueError("Resposta vazia da IA")
+
+        json_block = extract_json_block(response)
+        if not json_block:
+            raise ValueError("IA não retornou JSON")
+
+        parsed = json.loads(json_block)
+        feedback = (parsed.get("feedback") or "").strip()
+        objectives = [str(item).strip() for item in parsed.get("objectives", []) if str(item).strip()]
+        is_satisfactory = bool(parsed.get("is_satisfactory", False))
+        goals_payload = parsed.get("detected_goals", []) or []
+
+        detected_goals = []
+        for goal in goals_payload:
+            title = str(goal.get("title", "")).strip()
+            description = str(goal.get("description", "")).strip()
+            if title and description:
+                detected_goals.append(
+                    DetectedGoal(
+                        pillar=pillar,
+                        title=title,
+                        description=description
+                    )
+                )
+
+        has_goal = len(detected_goals) > 0
+        can_proceed = is_satisfactory and has_goal
+
+        if not feedback:
+            feedback = "Sua resposta está boa." if can_proceed else "Sua resposta precisa melhorar antes de avançar."
+        if not objectives:
+            objectives = ["Inclua ao menos uma ação concreta para este pilar."]
+
+        return AnalyzeResponseResult(
+            feedback=feedback,
+            objectives=objectives,
+            detected_goals=detected_goals,
+            is_satisfactory=is_satisfactory,
+            has_goal=has_goal,
+            can_proceed=can_proceed,
+            needs_improvement=not can_proceed,
+        )
     except Exception as e:
         logger.error(f"Error analyzing response: {e}")
-        return ""
+        fallback_has_goal = bool(re.search(r"\b(di[aá]rio|semana|vezes|minutos?|horas?|todo dia|prazo)\b", normalized_answer.lower()))
+        fallback_satisfactory = len(normalized_answer) >= 50
+        fallback_can_proceed = fallback_has_goal and fallback_satisfactory
+        return AnalyzeResponseResult(
+            feedback="Sua resposta está boa." if fallback_can_proceed else "Sua resposta precisa melhorar com mais detalhes práticos.",
+            objectives=[
+                "Defina uma ação concreta para este pilar.",
+                "Adicione frequência ou prazo para execução."
+            ],
+            detected_goals=(
+                [DetectedGoal(pillar=pillar, title=f"Meta em {pillar}", description=normalized_answer[:180])]
+                if fallback_has_goal else []
+            ),
+            is_satisfactory=fallback_satisfactory,
+            has_goal=fallback_has_goal,
+            can_proceed=fallback_can_proceed,
+            needs_improvement=not fallback_can_proceed,
+        )
 
 # ==================== ROUTES ====================
 
@@ -1007,6 +1132,26 @@ async def submit_form(submission: FormSubmission = Depends(FormSubmission.as_for
         }
         await db.form_responses.insert_one(response_doc)
 
+    # Save detected goals extracted by ELIOS during "Próximo"
+    normalized_keys = set()
+    for goal in submission.detected_goals:
+        dedupe_key = (goal.pillar.strip().upper(), goal.title.strip().lower())
+        if dedupe_key in normalized_keys:
+            continue
+        normalized_keys.add(dedupe_key)
+        goal_doc = {
+            "id": str(uuid.uuid4()),
+            "user_id": user_id,
+            "pillar": goal.pillar,
+            "title": goal.title,
+            "description": goal.description,
+            "target_date": None,
+            "status": "active",
+            "is_deleted": False,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        await db.goals.insert_one(goal_doc)
+
     if background_tasks:
         background_tasks.add_task(generate_elios_summary, user_id)
     
@@ -1183,7 +1328,7 @@ async def get_goal_history(goal_id: str, user: dict = Depends(get_current_user))
 async def analyze_response(data: AnalyzeResponseRequest):
     """Analyze a form response with AI (real-time during form filling)"""
     response = await analyze_form_response(data.pillar, data.question, data.answer)
-    return {"analysis": response}
+    return response.model_dump()
 
 @api_router.post("/ai/chat")
 async def chat(data: ChatMessage, user: dict = Depends(get_current_user)):

@@ -10,7 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../co
 import { Progress } from '../components/ui/progress';
 import { toast } from 'sonner';
 import { questionsAPI, formAPI, aiAPI } from '../services/api';
-import { 
+import {
   ArrowRight, 
   ArrowLeft, 
   CheckCircle2, 
@@ -151,7 +151,6 @@ const PillarStepIcon = ({ pillar }) => {
 };
 
 const MIN_QUESTION_ANSWER_LENGTH = 50;
-const MIN_ANALYSIS_TRIGGER_LENGTH = 5;
 
 const FormPage = () => {
   const navigate = useNavigate();
@@ -160,11 +159,8 @@ const FormPage = () => {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
-  const [aiAnalysis, setAiAnalysis] = useState('');
-  const [helpRequested, setHelpRequested] = useState(false);
-  const [isResponding, setIsResponding] = useState(false);
-  const respondTimeoutRef = useRef(null);
-  const previousAiAnalysisRef = useRef('');
+  const [aiAnalysis, setAiAnalysis] = useState(null);
+  const [questionAnalyses, setQuestionAnalyses] = useState({});
   const profilePhotoInputRef = useRef(null);
   
   // Form data
@@ -177,14 +173,6 @@ const FormPage = () => {
 
   useEffect(() => {
     loadQuestions();
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (respondTimeoutRef.current) {
-        clearTimeout(respondTimeoutRef.current);
-      }
-    };
   }, []);
 
   useEffect(() => {
@@ -201,21 +189,6 @@ const FormPage = () => {
     };
   }, [profilePhoto]);
 
-  useEffect(() => {
-    if (!aiAnalysis || aiAnalysis === previousAiAnalysisRef.current) return;
-
-    setIsResponding(true);
-    if (respondTimeoutRef.current) {
-      clearTimeout(respondTimeoutRef.current);
-    }
-
-    respondTimeoutRef.current = setTimeout(() => {
-      setIsResponding(false);
-    }, 900);
-
-    previousAiAnalysisRef.current = aiAnalysis;
-  }, [aiAnalysis]);
-
   const loadQuestions = async () => {
     try {
       const response = await questionsAPI.getAll();
@@ -230,7 +203,7 @@ const FormPage = () => {
   const totalSteps = questions.length + 4; // Name + Email + Photo + Birth date + Questions
   const progress = ((currentStep + 1) / totalSteps) * 100;
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (currentStep === 0 && !fullName.trim()) {
       toast.error('Por favor, insira seu nome completo');
       return;
@@ -250,16 +223,52 @@ const FormPage = () => {
         toast.error(`Por favor, escreva pelo menos ${MIN_QUESTION_ANSWER_LENGTH} caracteres para continuar`);
         return;
       }
+
+      const existingAnalysis = questionAnalyses[question.id];
+      const shouldReanalyze = !existingAnalysis || existingAnalysis.answer !== answer;
+
+      if (shouldReanalyze) {
+        setAnalyzing(true);
+        try {
+          const analysisResponse = await aiAPI.analyze({
+            pillar: question.pillar,
+            question: question.description,
+            answer
+          });
+
+          const analysis = {
+            ...analysisResponse.data,
+            answer
+          };
+          setQuestionAnalyses((prev) => ({ ...prev, [question.id]: analysis }));
+          setAiAnalysis(analysis);
+
+          if (!analysis.can_proceed) {
+            toast.error('Revise a resposta: ela precisa estar satisfatória e conter ao menos uma meta detectável.');
+          } else {
+            toast.success('Resposta aprovada pelo ELIOS. Clique em "Próximo" novamente para continuar.');
+          }
+        } catch (error) {
+          toast.error('Não foi possível analisar a resposta agora. Tente novamente.');
+        } finally {
+          setAnalyzing(false);
+        }
+        return;
+      }
+
+      if (!existingAnalysis.can_proceed) {
+        setAiAnalysis(existingAnalysis);
+        toast.error('Ainda não é possível avançar: melhore a resposta e inclua uma meta detectável.');
+        return;
+      }
     }
     
-    setAiAnalysis('');
-    setHelpRequested(false);
+    setAiAnalysis(null);
     setCurrentStep(prev => prev + 1);
   };
 
   const handleBack = () => {
-    setAiAnalysis('');
-    setHelpRequested(false);
+    setAiAnalysis(null);
     setCurrentStep(prev => prev - 1);
   };
 
@@ -268,35 +277,7 @@ const FormPage = () => {
       ...prev,
       [questionId]: value
     }));
-    setAiAnalysis('');
-    setHelpRequested(false);
-  };
-
-  const analyzeResponse = async () => {
-    if (currentStep < 4) return;
-    
-    const question = questions[currentStep - 4];
-    const answer = responses[question.id];
-    
-    if (!answer || answer.trim().length < MIN_ANALYSIS_TRIGGER_LENGTH) {
-      toast.error(`Escreva pelo menos ${MIN_ANALYSIS_TRIGGER_LENGTH} caracteres para pedir ajuda.`);
-      return;
-    }
-    
-    setHelpRequested(true);
-    setAnalyzing(true);
-    try {
-      const response = await aiAPI.analyze({
-        pillar: question.pillar,
-        question: question.description,
-        answer: answer
-      });
-      setAiAnalysis(response.data.analysis);
-    } catch (error) {
-      console.error('Error analyzing:', error);
-    } finally {
-      setAnalyzing(false);
-    }
+    setAiAnalysis(null);
   };
 
   const handleSubmit = async () => {
@@ -312,6 +293,15 @@ const FormPage = () => {
       formData.append('email', email);
       formData.append('date_of_birth', birthDate);
       formData.append('responses', JSON.stringify(formattedResponses));
+      const detectedGoals = Object.entries(questionAnalyses).flatMap(([questionId, analysis]) =>
+        (analysis.detected_goals || []).map((goal) => ({
+          question_id: questionId,
+          pillar: goal.pillar,
+          title: goal.title,
+          description: goal.description
+        }))
+      );
+      formData.append('detected_goals', JSON.stringify(detectedGoals));
       if (profilePhoto) {
         formData.append('profile_photo', profilePhoto);
       }
@@ -567,30 +557,8 @@ const FormPage = () => {
             data-testid={`form-question-${questionIndex}`}
           />
 
-          <div className="flex justify-center">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={analyzeResponse}
-              disabled={analyzing}
-              className="gap-2"
-            >
-              {analyzing ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  ELIOS está analisando...
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-4 h-4" />
-                  Pedir ajuda ao ELIOS
-                </>
-              )}
-            </Button>
-          </div>
-
           {/* AI Analysis */}
-          {helpRequested && (analyzing || aiAnalysis) && (
+          {(analyzing || aiAnalysis) && (
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -610,10 +578,23 @@ const FormPage = () => {
                   {analyzing ? (
                     <div className="flex items-center gap-2 text-slate-400">
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Analisando sua resposta...</span>
+                      <span>Analisando sua resposta ao clicar em Próximo...</span>
                     </div>
                   ) : (
-                    <p className="text-slate-300 text-sm">{aiAnalysis}</p>
+                    <div className="space-y-3 text-sm">
+                      <p className="text-slate-200">
+                        <span className="text-amber-300 font-medium">a. Feedback:</span>{' '}
+                        {aiAnalysis?.feedback}
+                      </p>
+                      <div>
+                        <p className="text-amber-300 font-medium">b. Objetivos:</p>
+                        <ul className="list-disc pl-5 text-slate-300 space-y-1 mt-1">
+                          {(aiAnalysis?.objectives || []).map((objective, idx) => (
+                            <li key={`${objective}-${idx}`}>{objective}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
                   )}
                 </div>
               </div>
@@ -703,6 +684,7 @@ const FormPage = () => {
               ) : (
                 <Button
                   onClick={handleNext}
+                  disabled={analyzing}
                   className="btn-primary"
                   data-testid="form-next"
                 >
