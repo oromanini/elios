@@ -135,8 +135,16 @@ class UserResponse(BaseModel):
 
 class UserUpdate(BaseModel):
     full_name: Optional[str] = None
+    email: Optional[EmailStr] = None
     is_active: Optional[bool] = None
     role: Optional[str] = None
+
+class AdminUserCreate(BaseModel):
+    full_name: str
+    email: EmailStr
+    password: str
+    role: str = "ADMIN"
+    is_active: bool = True
 
 class AdminUserFormResponses(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -1081,6 +1089,31 @@ async def list_users(admin: dict = Depends(get_admin_user)):
     users = await db.users.find({}, {"_id": 0, "password_hash": 0}).to_list(1000)
     return [UserResponse(**u) for u in users]
 
+@api_router.post("/admin/users", response_model=UserResponse)
+async def create_user_by_admin(payload: AdminUserCreate, admin: dict = Depends(get_admin_user)):
+    """Create a new admin user (admin only)."""
+    if payload.role != "ADMIN":
+        raise HTTPException(status_code=400, detail="Este endpoint cria apenas usuários ADMIN")
+
+    existing = await db.users.find_one({"email": payload.email})
+    if existing:
+        raise HTTPException(status_code=400, detail="Email já cadastrado")
+
+    user_doc = {
+        "id": str(uuid.uuid4()),
+        "full_name": payload.full_name,
+        "email": payload.email,
+        "password_hash": hash_password(payload.password),
+        "role": "ADMIN",
+        "is_active": payload.is_active,
+        "form_completed": False,
+        "elios_summary": None,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+
+    await db.users.insert_one(user_doc)
+    return UserResponse(**user_doc)
+
 @api_router.get("/admin/users/form-responses", response_model=List[AdminUserFormResponses])
 async def list_users_form_responses(
     name: Optional[str] = None,
@@ -1156,6 +1189,11 @@ async def update_user(user_id: str, update: UserUpdate, admin: dict = Depends(ge
     
     if not update_dict:
         raise HTTPException(status_code=400, detail="Nenhum campo para atualizar")
+
+    if "email" in update_dict:
+        existing = await db.users.find_one({"email": update_dict["email"], "id": {"$ne": user_id}})
+        if existing:
+            raise HTTPException(status_code=400, detail="Email já cadastrado")
     
     result = await db.users.update_one(
         {"id": user_id},
@@ -1710,3 +1748,7 @@ app.add_middleware(
 @app.on_event("shutdown")
 async def shutdown_db_client():
     client.close()
+    if "email" in update_dict:
+        existing = await db.users.find_one({"email": update_dict["email"], "id": {"$ne": user_id}})
+        if existing:
+            raise HTTPException(status_code=400, detail="Email já cadastrado")

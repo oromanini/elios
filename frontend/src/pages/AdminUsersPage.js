@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Switch } from '../components/ui/switch';
@@ -27,8 +27,18 @@ const AdminUsersPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterRole, setFilterRole] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
+  const [newAdminData, setNewAdminData] = useState({
+    full_name: '',
+    email: '',
+    password: ''
+  });
+  const [editData, setEditData] = useState({
+    full_name: '',
+    email: ''
+  });
 
   useEffect(() => {
     loadUsers();
@@ -75,6 +85,47 @@ const AdminUsersPage = () => {
     }
   };
 
+  const handleOpenEditDialog = (user) => {
+    setSelectedUser(user);
+    setEditData({
+      full_name: user.full_name,
+      email: user.email
+    });
+    setEditDialogOpen(true);
+  };
+
+  const handleCreateAdmin = async () => {
+    try {
+      await adminAPI.createUser({
+        ...newAdminData,
+        role: 'ADMIN',
+        is_active: true
+      });
+      toast.success('Novo admin criado com sucesso');
+      setCreateDialogOpen(false);
+      setNewAdminData({ full_name: '', email: '', password: '' });
+      loadUsers();
+    } catch (error) {
+      const detail = error?.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : 'Erro ao criar admin');
+    }
+  };
+
+  const handleSaveUserEdits = async () => {
+    if (!selectedUser) return;
+
+    try {
+      await adminAPI.updateUser(selectedUser.id, editData);
+      toast.success('Usuário atualizado com sucesso');
+      setEditDialogOpen(false);
+      setSelectedUser(null);
+      loadUsers();
+    } catch (error) {
+      const detail = error?.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : 'Erro ao atualizar usuário');
+    }
+  };
+
   const filteredUsers = users.filter(user => {
     const matchesSearch = user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           user.email.toLowerCase().includes(searchTerm.toLowerCase());
@@ -108,6 +159,15 @@ const AdminUsersPage = () => {
           <p className="text-slate-400 mt-1">
             Administre os usuários do sistema ELIOS
           </p>
+        </div>
+        <div className="flex justify-end">
+          <Button
+            onClick={() => setCreateDialogOpen(true)}
+            className="bg-primary text-primary-foreground"
+            data-testid="open-create-admin-dialog"
+          >
+            Adicionar Admin
+          </Button>
         </div>
 
         {/* Stats */}
@@ -280,39 +340,50 @@ const AdminUsersPage = () => {
                         {new Date(user.created_at).toLocaleDateString('pt-BR')}
                       </TableCell>
                       <TableCell className="text-right">
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="h-8 w-8 text-slate-400 hover:text-red-400"
-                              data-testid={`delete-user-${user.id}`}
-                            >
-                              <Trash2 size={16} />
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent className="glass-card border-white/10">
-                            <AlertDialogHeader>
-                              <AlertDialogTitle className="text-white">
-                                Excluir Usuário?
-                              </AlertDialogTitle>
-                              <AlertDialogDescription className="text-slate-400">
-                                Esta ação não pode ser desfeita. Todos os dados do usuário serão perdidos.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel className="bg-slate-800 text-white border-slate-700">
-                                Cancelar
-                              </AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() => handleDeleteUser(user.id)}
-                                className="bg-red-600 hover:bg-red-700"
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8 text-slate-400 hover:text-primary"
+                            data-testid={`edit-user-${user.id}`}
+                            onClick={() => handleOpenEditDialog(user)}
+                          >
+                            <Edit2 size={16} />
+                          </Button>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-8 w-8 text-slate-400 hover:text-red-400"
+                                data-testid={`delete-user-${user.id}`}
                               >
-                                Excluir
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
+                                <Trash2 size={16} />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent className="glass-card border-white/10">
+                              <AlertDialogHeader>
+                                <AlertDialogTitle className="text-white">
+                                  Excluir Usuário?
+                                </AlertDialogTitle>
+                                <AlertDialogDescription className="text-slate-400">
+                                  Esta ação não pode ser desfeita. Todos os dados do usuário serão perdidos.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel className="bg-slate-800 text-white border-slate-700">
+                                  Cancelar
+                                </AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => handleDeleteUser(user.id)}
+                                  className="bg-red-600 hover:bg-red-700"
+                                >
+                                  Excluir
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -328,6 +399,89 @@ const AdminUsersPage = () => {
             )}
           </CardContent>
         </Card>
+
+        <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+          <DialogContent className="glass-card border-white/10">
+            <DialogHeader>
+              <DialogTitle className="text-white">Criar novo admin</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              <Input
+                placeholder="Nome completo"
+                value={newAdminData.full_name}
+                onChange={(event) => setNewAdminData((prev) => ({ ...prev, full_name: event.target.value }))}
+                className="bg-slate-900/50 border-slate-700 text-white"
+              />
+              <Input
+                type="email"
+                placeholder="Email"
+                value={newAdminData.email}
+                onChange={(event) => setNewAdminData((prev) => ({ ...prev, email: event.target.value }))}
+                className="bg-slate-900/50 border-slate-700 text-white"
+              />
+              <Input
+                type="password"
+                placeholder="Senha inicial"
+                value={newAdminData.password}
+                onChange={(event) => setNewAdminData((prev) => ({ ...prev, password: event.target.value }))}
+                className="bg-slate-900/50 border-slate-700 text-white"
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setCreateDialogOpen(false)}
+                className="border-slate-700 text-white"
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={handleCreateAdmin}
+                disabled={!newAdminData.full_name || !newAdminData.email || !newAdminData.password}
+              >
+                Criar Admin
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+          <DialogContent className="glass-card border-white/10">
+            <DialogHeader>
+              <DialogTitle className="text-white">Editar usuário</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              <Input
+                placeholder="Nome completo"
+                value={editData.full_name}
+                onChange={(event) => setEditData((prev) => ({ ...prev, full_name: event.target.value }))}
+                className="bg-slate-900/50 border-slate-700 text-white"
+              />
+              <Input
+                type="email"
+                placeholder="Email"
+                value={editData.email}
+                onChange={(event) => setEditData((prev) => ({ ...prev, email: event.target.value }))}
+                className="bg-slate-900/50 border-slate-700 text-white"
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setEditDialogOpen(false)}
+                className="border-slate-700 text-white"
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={handleSaveUserEdits}
+                disabled={!editData.full_name || !editData.email}
+              >
+                Salvar alterações
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </Layout>
   );
