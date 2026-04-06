@@ -8,8 +8,10 @@ on:
 env:
   PROJECT_ID: elios-492418
   REGION: us-central1
-  WIF_PROVIDER: projects/513240742946/locations/global/workloadIdentityPools/elios-wif-pool/providers/elios-wif-provider
-  SA_EMAIL: elios-deployer@elios-492418.iam.gserviceaccount.com
+  # Corrigido: O pool se chama github-pool, não elios-wif-pool
+  WIF_PROVIDER: projects/513240742946/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+  # Corrigido: O e-mail da conta que o Terraform criou
+  SA_EMAIL: github-actions-deployer@elios-492418.iam.gserviceaccount.com
   REPOSITORY: elios
   BACKEND_SERVICE: elios-api
   FRONTEND_SERVICE: elios-web
