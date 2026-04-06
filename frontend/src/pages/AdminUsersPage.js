@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '../components/ui/alert-dialog';
 import { adminAPI } from '../services/api';
 import { toast } from 'sonner';
+import { getBackendBaseUrl } from '../config/apiBaseUrl';
 import {
   Users,
   Search,
@@ -18,10 +19,12 @@ import {
   UserCheck,
   UserX,
   Shield,
-  User
+  User,
+  Camera
 } from 'lucide-react';
 
 const AdminUsersPage = () => {
+  const backendBaseUrl = getBackendBaseUrl();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -39,6 +42,8 @@ const AdminUsersPage = () => {
     full_name: '',
     email: ''
   });
+  const [editPhotoFile, setEditPhotoFile] = useState(null);
+  const [editPhotoPreview, setEditPhotoPreview] = useState(null);
 
   useEffect(() => {
     loadUsers();
@@ -86,12 +91,31 @@ const AdminUsersPage = () => {
   };
 
   const handleOpenEditDialog = (user) => {
+    const currentPhotoUrl = user.profile_photo_url
+      ? (user.profile_photo_url.startsWith('http') ? user.profile_photo_url : `${backendBaseUrl}${user.profile_photo_url}`)
+      : null;
+
     setSelectedUser(user);
     setEditData({
       full_name: user.full_name,
       email: user.email
     });
+    setEditPhotoFile(null);
+    setEditPhotoPreview(currentPhotoUrl);
     setEditDialogOpen(true);
+  };
+
+  const handlePhotoSelection = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      toast.error('Selecione apenas arquivos de imagem');
+      return;
+    }
+
+    setEditPhotoFile(file);
+    setEditPhotoPreview(URL.createObjectURL(file));
   };
 
   const handleCreateAdmin = async () => {
@@ -115,10 +139,31 @@ const AdminUsersPage = () => {
     if (!selectedUser) return;
 
     try {
-      await adminAPI.updateUser(selectedUser.id, editData);
+      const hasProfileChanged = (
+        editData.full_name !== selectedUser.full_name ||
+        editData.email !== selectedUser.email
+      );
+
+      if (!hasProfileChanged && !editPhotoFile) {
+        toast.error('Nenhuma alteração para salvar');
+        return;
+      }
+
+      if (hasProfileChanged) {
+        await adminAPI.updateUser(selectedUser.id, editData);
+      }
+
+      if (editPhotoFile) {
+        const formData = new FormData();
+        formData.append('profile_photo', editPhotoFile);
+        await adminAPI.uploadUserPhoto(selectedUser.id, formData);
+      }
+
       toast.success('Usuário atualizado com sucesso');
       setEditDialogOpen(false);
       setSelectedUser(null);
+      setEditPhotoFile(null);
+      setEditPhotoPreview(null);
       loadUsers();
     } catch (error) {
       const detail = error?.response?.data?.detail;
@@ -289,7 +334,13 @@ const AdminUsersPage = () => {
                       <TableCell className="font-medium text-white">
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center">
-                            {user.role === 'ADMIN' ? (
+                            {user.profile_photo_url ? (
+                              <img
+                                src={user.profile_photo_url.startsWith('http') ? user.profile_photo_url : `${backendBaseUrl}${user.profile_photo_url}`}
+                                alt={`Foto de ${user.full_name}`}
+                                className="w-10 h-10 rounded-full object-cover"
+                              />
+                            ) : user.role === 'ADMIN' ? (
                               <Shield size={18} className="text-primary" />
                             ) : (
                               <User size={18} className="text-slate-400" />
@@ -451,6 +502,35 @@ const AdminUsersPage = () => {
               <DialogTitle className="text-white">Editar usuário</DialogTitle>
             </DialogHeader>
             <div className="space-y-3">
+              <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-4">
+                <p className="text-sm text-slate-300 mb-3">Foto de perfil</p>
+                <div className="flex items-center gap-4">
+                  <div className="h-20 w-20 rounded-full bg-slate-800 flex items-center justify-center overflow-hidden border border-slate-700">
+                    {editPhotoPreview ? (
+                      <img
+                        src={editPhotoPreview}
+                        alt={`Foto de ${editData.full_name || selectedUser?.full_name || 'usuário'}`}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <User className="text-slate-500" size={28} />
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <label className="inline-flex items-center gap-2 text-sm text-white bg-slate-800 px-3 py-2 rounded-md border border-slate-700 cursor-pointer hover:bg-slate-700 transition-colors">
+                      <Camera size={16} />
+                      <span>{selectedUser?.profile_photo_url ? 'Trocar foto' : 'Enviar foto'}</span>
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/jpg"
+                        className="hidden"
+                        onChange={handlePhotoSelection}
+                      />
+                    </label>
+                    <p className="text-xs text-slate-500">Formatos: JPG ou PNG (máx. 5MB)</p>
+                  </div>
+                </div>
+              </div>
               <Input
                 placeholder="Nome completo"
                 value={editData.full_name}
