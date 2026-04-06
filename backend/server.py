@@ -826,6 +826,25 @@ def build_analytical_objectives(
 
     if cleaned_objectives:
         return cleaned_objectives[:4]
+
+    answer_sentences = [
+        sentence.strip(" .;:-")
+        for sentence in re.split(r"[.!?]\s+|\n+", (answer or "").strip())
+        if sentence.strip()
+    ]
+    measurable_sentence = next(
+        (
+            sentence for sentence in answer_sentences
+            if re.search(r"\b(\d+|di[aá]ri[oa]|seman[ae]s?|mensal|minutos?|horas?|x\s*por)\b", sentence.lower())
+        ),
+        None
+    )
+    if measurable_sentence:
+        return [f"Executar a meta descrita com consistência: {measurable_sentence[:140]}."]
+
+    if detected_goals:
+        return [f"Transformar '{detected_goals[0].title}' em ação semanal com frequência definida."]
+
     return fallback_objectives[:4]
 
 async def analyze_form_response(pillar: str, question: str, answer: str) -> AnalyzeResponseResult:
