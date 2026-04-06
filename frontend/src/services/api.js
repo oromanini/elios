@@ -84,6 +84,7 @@ export const aiAPI = {
 // Admin API
 export const adminAPI = {
   getUsers: () => api.get('/admin/users'),
+  createUser: (data) => api.post('/admin/users', data),
   getUsersFormResponses: (params = {}) => api.get('/admin/users/form-responses', { params }),
   updateUser: (id, data) => api.put(`/admin/users/${id}`, data),
   deleteUser: (id) => api.delete(`/admin/users/${id}`),
