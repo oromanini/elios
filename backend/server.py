@@ -874,7 +874,8 @@ async def analyze_form_response(pillar: str, question: str, answer: str) -> Anal
             needs_improvement=True,
         )
     
-    system_message = """Você é o ELIOS, analisando uma resposta de formulário por pilar com leitura crítica e objetiva.
+    system_message = """Você é o ELIOS, o Mentor de Alta Performance. Sua missão é analisar a resposta do usuário, validando se ele definiu metas práticas ou se apenas descreveu problemas.
+
 Retorne SOMENTE JSON válido com este formato:
 {
   "feedback": "string curta",
@@ -885,15 +886,11 @@ Retorne SOMENTE JSON válido com este formato:
   ]
 }
 
-Regras:
-- Faça feedback analítico (não replique a resposta do usuário).
-- is_satisfactory=true somente se a resposta estiver condizente com o pilar E tiver clareza prática.
-- detected_goals deve conter apenas metas detectáveis no texto do usuário.
-- Se não houver meta detectável, retorne lista vazia.
-- Se houver objetivo bem definido no texto, elenque-o em detected_goals.
-- Se não houver objetivo bem definido, deixe explícito no feedback que o usuário precisa listar ao menos 1 objetivo concreto.
-- Não invente objetivo que não esteja no texto do usuário.
-- objectives deve ter de 1 a 4 itens."""
+REGRAS DE ANÁLISE:
+1. SUBJETIVIDADE OBRIGATÓRIA: CITE o contexto específico da resposta do usuário no seu feedback. Prove que você leu. (Ex: se ele falou de "farmácia", mencione "o negócio").
+2. RIGOR: Se a resposta for genérica ("vou melhorar") sem especificar O QUE e QUANDO, retorne is_satisfactory=false.
+3. DETECTED_GOALS e OBJECTIVES: Só preencha se houver um verbo de ação claro + uma medida de tempo/quantidade. NUNCA copie o texto do usuário na íntegra.
+4. FEEDBACK: Máximo de 3 linhas. Se is_satisfactory=false, dê um puxão de orelha apontando a falta de especificidade."""
 
     user_message = f"Pilar: {pillar}\nPergunta: {question}\nResposta do usuário: {answer}"
 
@@ -902,8 +899,8 @@ Regras:
             system_message,
             user_message,
             model=GROQ_FORM_MODEL or provider["model"],
-            temperature=0.3,
-            max_tokens=150
+            temperature=0.6,
+            max_tokens=350
         )
         if not response:
             raise ValueError("Resposta vazia da IA")
@@ -935,10 +932,11 @@ Regras:
         can_proceed = is_satisfactory and has_goal
 
         if can_proceed:
-            feedback = (
-                "Sua resposta está muito boa. Elencou suas dificuldades e definiu metas para enfrentá-las. "
-                "Continue assim nos demais pilares."
-            )
+            if not feedback:
+                feedback = (
+                    "Sua resposta está muito boa. Elencou suas dificuldades e definiu metas para enfrentá-las. "
+                    "Continue assim nos demais pilares."
+                )
             objectives = build_analytical_objectives(
                 answer=answer,
                 detected_goals=detected_goals,
@@ -973,7 +971,7 @@ Regras:
         fallback_satisfactory = len(normalized_answer) >= 50
         fallback_can_proceed = fallback_has_goal and fallback_satisfactory
         fallback_objectives = (
-            [normalized_answer[:180]]
+            ["Manter a consistência na execução do plano estabelecido."]
             if fallback_can_proceed else
             [
                 "Defina uma ação concreta para este pilar.",
@@ -993,7 +991,7 @@ Regras:
             ),
             objectives=fallback_objectives,
             detected_goals=(
-                [DetectedGoal(pillar=pillar, title=f"Meta em {pillar}", description=normalized_answer[:180])]
+                [DetectedGoal(pillar=pillar, title=f"Meta em {pillar}", description="Ação descrita no texto original.")]
                 if fallback_has_goal else []
             ),
             is_satisfactory=fallback_satisfactory,
