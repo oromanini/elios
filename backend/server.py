@@ -795,6 +795,50 @@ def extract_json_block(raw_text: str) -> Optional[str]:
     match = re.search(r"\{[\s\S]*\}", stripped)
     return match.group(0) if match else None
 
+def build_analytical_objectives(
+    answer: str,
+    detected_goals: List[DetectedGoal],
+    fallback_objectives: List[str]
+) -> List[str]:
+    """Return concise SMART-like objectives, avoiding objective text that mirrors the original answer."""
+    normalized_answer = (answer or "").strip().lower()
+    objective_candidates = [goal.description.strip() for goal in detected_goals if goal.description.strip()]
+    objective_candidates.extend([item.strip() for item in fallback_objectives if item and item.strip()])
+
+    cleaned_objectives: List[str] = []
+    for objective in objective_candidates:
+        objective_lower = objective.lower()
+        mirrors_answer = (
+            len(objective) > 110 and
+            (objective_lower in normalized_answer or normalized_answer in objective_lower)
+        )
+        if mirrors_answer:
+            continue
+        cleaned_objectives.append(objective)
+
+    if cleaned_objectives:
+        return cleaned_objectives[:4]
+
+    answer_sentences = [
+        sentence.strip(" .;:-")
+        for sentence in re.split(r"[.!?]\s+|\n+", (answer or "").strip())
+        if sentence.strip()
+    ]
+    measurable_sentence = next(
+        (
+            sentence for sentence in answer_sentences
+            if re.search(r"\b(\d+|di[aá]ri[oa]|seman[ae]s?|mensal|minutos?|horas?|x\s*por)\b", sentence.lower())
+        ),
+        None
+    )
+    if measurable_sentence:
+        return [f"Executar a meta descrita com consistência: {measurable_sentence[:140]}."]
+
+    if detected_goals:
+        return [f"Transformar '{detected_goals[0].title}' em ação semanal com frequência definida."]
+
+    return fallback_objectives[:4]
+
 async def analyze_form_response(pillar: str, question: str, answer: str) -> AnalyzeResponseResult:
     """Analyze a form response and return structured validation for progression rules."""
     normalized_answer = (answer or "").strip()
@@ -822,7 +866,7 @@ async def analyze_form_response(pillar: str, question: str, answer: str) -> Anal
             needs_improvement=True,
         )
     
-    system_message = """Você é o ELIOS, analisando resposta de formulário por pilar.
+    system_message = """Você é o ELIOS, analisando uma resposta de formulário por pilar com leitura crítica e objetiva.
 Retorne SOMENTE JSON válido com este formato:
 {
   "feedback": "string curta",
@@ -834,11 +878,13 @@ Retorne SOMENTE JSON válido com este formato:
 }
 
 Regras:
+- Faça feedback analítico (não replique a resposta do usuário).
 - is_satisfactory=true somente se a resposta estiver condizente com o pilar E tiver clareza prática.
 - detected_goals deve conter apenas metas detectáveis no texto do usuário.
 - Se não houver meta detectável, retorne lista vazia.
-- Se a resposta estiver boa, use feedback positivo e encorajador.
-- Se a resposta precisar melhorar, deixe explícito que a pessoa precisa listar metas concretas.
+- Se houver objetivo bem definido no texto, elenque-o em detected_goals.
+- Se não houver objetivo bem definido, deixe explícito no feedback que o usuário precisa listar ao menos 1 objetivo concreto.
+- Não invente objetivo que não esteja no texto do usuário.
 - objectives deve ter de 1 a 4 itens."""
 
     user_message = f"Pilar: {pillar}\nPergunta: {question}\nResposta do usuário: {answer}"
@@ -885,7 +931,11 @@ Regras:
                 "Sua resposta está muito boa. Elencou suas dificuldades e definiu metas para enfrentá-las. "
                 "Continue assim nos demais pilares."
             )
-            objectives = [goal.description for goal in detected_goals[:4]]
+            objectives = build_analytical_objectives(
+                answer=answer,
+                detected_goals=detected_goals,
+                fallback_objectives=[goal.description for goal in detected_goals[:4]]
+            )
         else:
             if not feedback:
                 feedback = "Sua resposta precisa melhorar antes de avançar."
