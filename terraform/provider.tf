@@ -10,6 +10,6 @@ terraform {
 }
 
 provider "google" {
-  project = var.project_id
+  project = "elios-492418"
   region  = var.region
 }

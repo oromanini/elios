@@ -1,9 +1,10 @@
 locals {
+  project_id           = "elios-492418"
   backend_service_name = "elios-api"
   frontend_service_name = "elios-web"
   # Imagens dinâmicas para não quebrar o deploy inicial
-  backend_image = var.backend_image != "" ? var.backend_image : "${var.region}-docker.pkg.dev/${var.project_id}/${var.artifact_registry_repository_id}/backend:latest"
-  frontend_image = var.frontend_image != "" ? var.frontend_image : "${var.region}-docker.pkg.dev/${var.project_id}/${var.artifact_registry_repository_id}/frontend:latest"
+  backend_image = var.backend_image != "" ? var.backend_image : "${var.region}-docker.pkg.dev/${local.project_id}/${var.artifact_registry_repository_id}/backend:latest"
+  frontend_image = var.frontend_image != "" ? var.frontend_image : "${var.region}-docker.pkg.dev/${local.project_id}/${var.artifact_registry_repository_id}/frontend:latest"
 }
 
 # --- RECURSO: ARTIFACT REGISTRY ---
@@ -22,19 +23,19 @@ resource "google_service_account" "github_actions" {
 
 # --- PERMISSÕES DE IAM (O ESSENCIAL) ---
 resource "google_project_iam_member" "github_actions_run_admin" {
-  project = var.project_id
+  project = local.project_id
   role    = "roles/run.admin"
   member  = "serviceAccount:${google_service_account.github_actions.email}"
 }
 
 resource "google_project_iam_member" "github_actions_artifact_registry_writer" {
-  project = var.project_id
+  project = local.project_id
   role    = "roles/artifactregistry.writer"
   member  = "serviceAccount:${google_service_account.github_actions.email}"
 }
 
 resource "google_project_iam_member" "github_actions_sa_user" {
-  project = var.project_id
+  project = local.project_id
   role    = "roles/iam.serviceAccountUser"
   member  = "serviceAccount:${google_service_account.github_actions.email}"
 }
@@ -51,7 +52,10 @@ resource "google_iam_workload_identity_pool_provider" "github" {
   attribute_mapping = {
     "google.subject"       = "assertion.sub"
     "attribute.repository" = "assertion.repository"
+    "attribute.actor"      = "assertion.actor"
+    "attribute.ref"        = "assertion.ref"
   }
+  attribute_condition = "assertion.repository == \"oromanini/elios\""
   oidc {
     issuer_uri = "https://token.actions.githubusercontent.com"
   }
@@ -60,8 +64,7 @@ resource "google_iam_workload_identity_pool_provider" "github" {
 resource "google_service_account_iam_member" "github_wif_user" {
   service_account_id = google_service_account.github_actions.name
   role               = "roles/iam.workloadIdentityUser"
-  # Referência direta ao pool para evitar o erro de número de projeto
-  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.repository/${var.github_owner}/${var.github_repository}"
+  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.repository/oromanini/elios"
 }
 
 # --- SERVIÇO: BACKEND ---
@@ -88,7 +91,6 @@ resource "google_cloud_run_v2_service" "backend" {
         name  = "DB_NAME"
         value = var.db_name
       }
-      # JWT e GROQ REMOVIDOS CONFORME SOLICITADO
     }
   }
 }
