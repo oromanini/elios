@@ -67,18 +67,20 @@ jobs:
           docker build -t "$IMAGE" ./frontend
           docker push "$IMAGE"
 
-      # PASSO 3: Terraform Apply Completo (Agora o Cloud Run vai achar as imagens!)
-      - name: Terraform Apply (Full Deploy)
-        working-directory: ./terraform
+      # PASSO 3: Deploy direto no Cloud Run via gcloud
+      - name: Deploy Backend
         run: |
-          terraform apply -auto-approve \
-            -var="project_id=${{ env.PROJECT_ID }}" \
-            -var="github_owner=${{ github.repository_owner }}" \
-            -var="github_repository=${{ github.event.repository.name }}" \
-            -var="mongo_atlas_uri=${{ secrets.MONGO_ATLAS_URI }}" \
-            -var="r2_access_key=${{ secrets.R2_ACCESS_KEY }}" \
-            -var="r2_secret_key=${{ secrets.R2_SECRET_KEY }}" \
-            -var="r2_endpoint=${{ secrets.R2_ENDPOINT }}" \
-            -var="r2_bucket_name=${{ secrets.R2_BUCKET_NAME }}" \
-            -var="user=${{ secrets.USER }}" \
-            -var="password=${{ secrets.PASSWORD }}"
+          gcloud run deploy elios-api \
+            --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/backend:latest \
+            --region=${{ env.REGION }} \
+            --set-env-vars="MONGO_ATLAS_URI=${{ secrets.MONGO_ATLAS_URI }},ENV=production,GROQ_API_KEY=${{ secrets.GROQ_API_KEY }},GROQ_MODEL=${{ secrets.GROQ_MODEL || 'llama-3.3-70b-versatile' }}" \
+            --allow-unauthenticated
+
+      - name: Deploy Frontend
+        run: |
+          BACKEND_URL=$(gcloud run services describe elios-api --region=${{ env.REGION }} --format='value(status.url)')
+          gcloud run deploy elios-web \
+            --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/frontend:latest \
+            --region=${{ env.REGION }} \
+            --set-env-vars="VITE_API_URL=$BACKEND_URL" \
+            --allow-unauthenticated
