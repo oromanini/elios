@@ -61,12 +61,6 @@ jobs:
           docker build -t "$IMAGE" ./backend
           docker push "$IMAGE"
 
-      - name: Build and Push Frontend
-        run: |
-          IMAGE="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/frontend:latest"
-          docker build -t "$IMAGE" ./frontend
-          docker push "$IMAGE"
-
       # PASSO 3: Deploy direto no Cloud Run via gcloud
       - name: Deploy Backend
         run: |
@@ -75,6 +69,16 @@ jobs:
             --region=${{ env.REGION }} \
             --set-env-vars="MONGO_ATLAS_URI=${{ secrets.MONGO_ATLAS_URI }},ENV=production,GROQ_API_KEY=${{ secrets.GROQ_API_KEY }},GROQ_BASE_URL=${{ secrets.GROQ_BASE_URL }},GROQ_MODEL=${{ secrets.GROQ_MODEL }},GROQ_FORM_MODEL=${{ secrets.GROQ_FORM_MODEL }}" \
             --allow-unauthenticated
+
+      - name: Build and Push Frontend
+        run: |
+          BACKEND_URL=$(gcloud run services describe elios-api --region=${{ env.REGION }} --format='value(status.url)')
+
+          docker build \
+            --build-arg VITE_API_URL=$BACKEND_URL \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/frontend:latest \
+            ./frontend
+          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/frontend:latest
 
       - name: Deploy Frontend
         run: |
