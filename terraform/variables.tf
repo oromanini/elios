@@ -42,18 +42,13 @@ variable "frontend_image" {
   default     = ""
 }
 
-variable "mongo_url" {
+variable "mongo_atlas_uri" {
   description = "MongoDB Atlas connection string"
   type        = string
   sensitive   = true
   default     = ""
 }
 
-variable "db_name" {
-  description = "MongoDB database name"
-  type        = string
-  default     = "elios"
-}
 
 variable "r2_access_key" {
   description = "Cloudflare R2 access key"

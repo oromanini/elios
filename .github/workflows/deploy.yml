@@ -75,8 +75,7 @@ jobs:
             -var="project_id=${{ env.PROJECT_ID }}" \
             -var="github_owner=${{ github.repository_owner }}" \
             -var="github_repository=${{ github.event.repository.name }}" \
-            -var="mongo_url=${{ secrets.MONGO_URL }}" \
-            -var="db_name=${{ secrets.DB_NAME }}" \
+            -var="mongo_atlas_uri=${{ secrets.MONGO_ATLAS_URI }}" \
             -var="r2_access_key=${{ secrets.R2_ACCESS_KEY }}" \
             -var="r2_secret_key=${{ secrets.R2_SECRET_KEY }}" \
             -var="r2_endpoint=${{ secrets.R2_ENDPOINT }}" \
