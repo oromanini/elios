@@ -7,7 +7,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { toast } from 'sonner';
-import { Eye, EyeOff, ArrowRight, UserPlus } from 'lucide-react';
+import { Eye, EyeOff, ArrowRight, UserPlus, Loader2 } from 'lucide-react';
 
 const LoginPage = () => {
   const [email, setEmail] = useState('');
@@ -101,7 +101,10 @@ const LoginPage = () => {
                 data-testid="login-submit"
               >
                 {loading ? (
-                  <div className="spinner w-5 h-5" />
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin text-black" />
+                    Entrando...
+                  </>
                 ) : (
                   <>
                     Entrar
