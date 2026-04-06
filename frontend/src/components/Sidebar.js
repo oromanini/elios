@@ -17,12 +17,14 @@ import {
   FileText
 } from 'lucide-react';
 import { Button } from './ui/button';
+import { getBackendBaseUrl } from '../config/apiBaseUrl';
 
 const Sidebar = () => {
   const { user, logout, isAdmin } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const backendBaseUrl = getBackendBaseUrl();
 
   const handleLogout = () => {
     logout();
@@ -61,6 +63,12 @@ const Sidebar = () => {
     );
   };
 
+  const profilePhotoUrl = user?.profile_photo_url
+    ? user.profile_photo_url.startsWith('http')
+      ? user.profile_photo_url
+      : `${backendBaseUrl}${user.profile_photo_url}`
+    : null;
+
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
       {/* Logo */}
@@ -71,13 +79,33 @@ const Sidebar = () => {
       {/* User Info */}
       <div className="p-4 border-b border-white/5">
         <div className="glass-card rounded-lg p-3">
-          <p className="text-sm text-neutral-500">Bem-vindo,</p>
-          <p className="text-white font-semibold truncate">{user?.full_name}</p>
-          <span className={`inline-block mt-2 px-2 py-0.5 text-xs rounded-full ${
-            isAdmin() ? 'bg-white/10 text-white' : 'bg-amber-500/20 text-amber-400'
-          }`}>
-            {user?.role}
-          </span>
+          <div className="flex items-center gap-3">
+            {profilePhotoUrl && (
+              <img
+                src={profilePhotoUrl}
+                alt={`Foto de ${user?.full_name || 'usuário'}`}
+                className="h-12 w-12 rounded-full object-cover border border-white/10"
+              />
+            )}
+            <div className="min-w-0">
+              <p className="text-sm text-neutral-500">Bem-vindo,</p>
+              <p className="text-white font-semibold truncate">{user?.full_name}</p>
+              <span className={`inline-block mt-2 px-2 py-0.5 text-xs rounded-full ${
+                isAdmin() ? 'bg-white/10 text-white' : 'bg-amber-500/20 text-amber-400'
+              }`}>
+                {user?.role}
+              </span>
+            </div>
+          </div>
+          <Button
+            variant="ghost"
+            className="mt-3 h-9 w-full justify-start text-slate-400 hover:text-red-400 hover:bg-red-500/10"
+            onClick={handleLogout}
+            data-testid="logout-btn-user-card"
+          >
+            <LogOut size={16} className="mr-2" />
+            Sair do sistema
+          </Button>
         </div>
       </div>
 
@@ -99,18 +127,6 @@ const Sidebar = () => {
         )}
       </nav>
 
-      {/* Logout */}
-      <div className="p-4 border-t border-white/5">
-        <Button
-          variant="ghost"
-          className="w-full justify-start text-slate-400 hover:text-red-400 hover:bg-red-500/10"
-          onClick={handleLogout}
-          data-testid="logout-btn"
-        >
-          <LogOut size={20} className="mr-3" />
-          Sair
-        </Button>
-      </div>
     </div>
   );
 
