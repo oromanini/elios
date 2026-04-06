@@ -3,18 +3,13 @@ name: Deploy ELIOS to Cloud Run
 on:
   push:
     branches: ["main"]
-  workflow_dispatch:
 
 env:
   PROJECT_ID: elios-492418
   REGION: us-central1
-  # Corrigido: O pool se chama github-pool, não elios-wif-pool
   WIF_PROVIDER: projects/513240742946/locations/global/workloadIdentityPools/github-pool/providers/github-provider
-  # Corrigido: O e-mail da conta que o Terraform criou
   SA_EMAIL: github-actions-deployer@elios-492418.iam.gserviceaccount.com
   REPOSITORY: elios
-  BACKEND_SERVICE: elios-api
-  FRONTEND_SERVICE: elios-web
 
 jobs:
   deploy:
@@ -33,31 +28,51 @@ jobs:
           workload_identity_provider: ${{ env.WIF_PROVIDER }}
           service_account: ${{ env.SA_EMAIL }}
 
-      - name: Setup gcloud
-        uses: google-github-actions/setup-gcloud@v2
-        with:
-          project_id: ${{ env.PROJECT_ID }}
-
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "1.5.7" # A versão que você está usando no seu Mac
-          terraform_wrapper: false      
-          
-      - name: Configure Docker auth for Artifact Registry
-        run: gcloud auth configure-docker "${{ env.REGION }}-docker.pkg.dev" --quiet
+          terraform_version: "1.5.7"
+          terraform_wrapper: false
 
       - name: Terraform init
         working-directory: ./terraform
-        run: terraform init -input=false
+        run: terraform init
 
-      - name: Terraform apply (infra base)
+      # PASSO 1: Cria apenas a Garagem (Artifact Registry) e WIF
+      - name: Terraform Apply (Base Infra)
         working-directory: ./terraform
         run: |
-          terraform apply -input=false -auto-approve \
+          terraform apply -auto-approve \
+            -target=google_artifact_registry_repository.docker \
+            -target=google_iam_workload_identity_pool.github \
+            -target=google_iam_workload_identity_pool_provider.github \
+            -target=google_service_account.github_actions \
             -var="project_id=${{ env.PROJECT_ID }}" \
-            -var="project_number=${{ secrets.GCP_PROJECT_NUMBER }}" \
-            -var="region=${{ env.REGION }}" \
+            -var="github_owner=${{ github.repository_owner }}" \
+            -var="github_repository=${{ github.event.repository.name }}"
+
+      # PASSO 2: Build e Push das Imagens (Agora a garagem já existe!)
+      - name: Configure Docker auth
+        run: gcloud auth configure-docker "${{ env.REGION }}-docker.pkg.dev" --quiet
+
+      - name: Build and Push Backend
+        run: |
+          IMAGE="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/backend:latest"
+          docker build -t "$IMAGE" ./backend
+          docker push "$IMAGE"
+
+      - name: Build and Push Frontend
+        run: |
+          IMAGE="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/frontend:latest"
+          docker build -t "$IMAGE" ./frontend
+          docker push "$IMAGE"
+
+      # PASSO 3: Terraform Apply Completo (Agora o Cloud Run vai achar as imagens!)
+      - name: Terraform Apply (Full Deploy)
+        working-directory: ./terraform
+        run: |
+          terraform apply -auto-approve \
+            -var="project_id=${{ env.PROJECT_ID }}" \
             -var="github_owner=${{ github.repository_owner }}" \
             -var="github_repository=${{ github.event.repository.name }}" \
             -var="mongo_url=${{ secrets.MONGO_URL }}" \
@@ -70,49 +85,3 @@ jobs:
             -var="groq_api_key=${{ secrets.GROQ_API_KEY }}" \
             -var="user=${{ secrets.USER }}" \
             -var="password=${{ secrets.PASSWORD }}"
-
-      - name: Build and push backend image
-        env:
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          BACKEND_IMAGE="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/backend:${IMAGE_TAG}"
-          docker build -t "${BACKEND_IMAGE}" ./backend
-          docker push "${BACKEND_IMAGE}"
-          echo "BACKEND_IMAGE=${BACKEND_IMAGE}" >> "$GITHUB_ENV"
-
-      - name: Deploy backend to Cloud Run
-        run: |
-          gcloud run deploy "${{ env.BACKEND_SERVICE }}" \
-            --project="${{ env.PROJECT_ID }}" \
-            --region="${{ env.REGION }}" \
-            --platform=managed \
-            --allow-unauthenticated \
-            --image="${{ env.BACKEND_IMAGE }}" \
-            --set-env-vars="ENV=production,DB_NAME=${{ secrets.DB_NAME }},MONGO_URL=${{ secrets.MONGO_URL }},R2_ACCESS_KEY=${{ secrets.R2_ACCESS_KEY }},R2_SECRET_KEY=${{ secrets.R2_SECRET_KEY }},R2_ENDPOINT=${{ secrets.R2_ENDPOINT }},R2_BUCKET_NAME=${{ secrets.R2_BUCKET_NAME }},JWT_SECRET=${{ secrets.JWT_SECRET }},GROQ_API_KEY=${{ secrets.GROQ_API_KEY }},USER=${{ secrets.USER }},PASSWORD=${{ secrets.PASSWORD }}"
-
-      - name: Capture backend URL
-        run: |
-          BACKEND_URL="$(gcloud run services describe "${{ env.BACKEND_SERVICE }}" --project="${{ env.PROJECT_ID }}" --region="${{ env.REGION }}" --format='value(status.url)')"
-          echo "BACKEND_URL=${BACKEND_URL}" >> "$GITHUB_ENV"
-
-      - name: Build and push frontend image
-        env:
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          FRONTEND_IMAGE="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/frontend:${IMAGE_TAG}"
-          docker build \
-            --build-arg VITE_API_URL="${{ env.BACKEND_URL }}" \
-            -t "${FRONTEND_IMAGE}" \
-            ./frontend
-          docker push "${FRONTEND_IMAGE}"
-          echo "FRONTEND_IMAGE=${FRONTEND_IMAGE}" >> "$GITHUB_ENV"
-
-      - name: Deploy frontend to Cloud Run
-        run: |
-          gcloud run deploy "${{ env.FRONTEND_SERVICE }}" \
-            --project="${{ env.PROJECT_ID }}" \
-            --region="${{ env.REGION }}" \
-            --platform=managed \
-            --allow-unauthenticated \
-            --image="${{ env.FRONTEND_IMAGE }}" \
-            --set-env-vars="VITE_API_URL=${{ env.BACKEND_URL }}"
