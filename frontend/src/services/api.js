@@ -3,6 +3,7 @@ import axios from 'axios';
 import { getBackendBaseUrl } from '../config/apiBaseUrl';
 
 const API_URL = getBackendBaseUrl();
+export const AUTH_UNAUTHORIZED_EVENT = 'elios:auth-unauthorized';
 
 const api = axios.create({
   baseURL: `${API_URL}/api`,
@@ -26,6 +27,8 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem('elios_token');
+      localStorage.removeItem('elios_user');
+      window.dispatchEvent(new CustomEvent(AUTH_UNAUTHORIZED_EVENT));
       window.location.href = '/';
     }
     return Promise.reject(error);

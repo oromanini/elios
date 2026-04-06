@@ -11,7 +11,7 @@ import json
 from pydantic import BaseModel, Field, ConfigDict, EmailStr
 from typing import List, Optional, Dict, Any
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 import jwt
 import bcrypt
 import smtplib
@@ -34,7 +34,6 @@ db = client['elios']
 # JWT Configuration
 JWT_SECRET = os.environ.get('JWT_SECRET', 'default-secret-key')
 JWT_ALGORITHM = "HS256"
-JWT_EXPIRATION_HOURS = 24
 
 # AI Configuration (Groq only)
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY', '')
@@ -342,13 +341,10 @@ async def upload_profile_picture(user_id: str, file: UploadFile) -> str:
 
     raise HTTPException(status_code=500, detail="ENV inválido para upload de imagem.")
 
-def create_token(user_id: str, email: str, role: str) -> str:
+def create_token(user_id: str) -> str:
     """Create a JWT token"""
     payload = {
-        "user_id": user_id,
-        "email": email,
-        "role": role,
-        "exp": datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRATION_HOURS)
+        "user_id": user_id
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
@@ -810,7 +806,7 @@ async def register_user(user: UserCreate):
 
 @api_router.post("/auth/login")
 async def login(credentials: UserLogin):
-    """Login user"""
+    """Login admin user"""
     user = await db.users.find_one({"email": credentials.email}, {"_id": 0})
     
     if not user:
@@ -818,11 +814,14 @@ async def login(credentials: UserLogin):
     
     if not verify_password(credentials.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Credenciais inválidas")
+
+    if user.get("role") != "ADMIN":
+        raise HTTPException(status_code=403, detail="Acesso negado. Apenas administradores.")
     
     if not user.get("is_active", False):
         raise HTTPException(status_code=403, detail="Conta inativa. Aguarde aprovação do administrador.")
     
-    token = create_token(user["id"], user["email"], user["role"])
+    token = create_token(user["id"])
     
     return {
         "token": token,
@@ -1395,8 +1394,7 @@ async def init_admin():
     
     return {
         "message": "Admin criado com sucesso",
-        "email": "admin@hutooeducacao.com",
-        "password": "Admin@123"
+        "email": "admin@hutooeducacao.com"
     }
 
 # Include the router in the main app
