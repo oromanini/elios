@@ -87,6 +87,11 @@ export const adminAPI = {
   createUser: (data) => api.post('/admin/users', data),
   getUsersFormResponses: (params = {}) => api.get('/admin/users/form-responses', { params }),
   updateUser: (id, data) => api.put(`/admin/users/${id}`, data),
+  uploadUserPhoto: (id, formData) => api.post(`/admin/users/${id}/profile-photo`, formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    }
+  }),
   deleteUser: (id) => api.delete(`/admin/users/${id}`),
   getAIKnowledge: () => api.get('/admin/ai/knowledge'),
   addAIKnowledge: (data) => api.post('/admin/ai/knowledge', data),

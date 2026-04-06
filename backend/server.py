@@ -1073,7 +1073,8 @@ async def login(credentials: UserLogin):
             "email": user["email"],
             "role": user["role"],
             "form_completed": user.get("form_completed", False),
-            "elios_summary": user.get("elios_summary")
+            "elios_summary": user.get("elios_summary"),
+            "profile_photo_url": user.get("profile_photo_url")
         }
     }
 
@@ -1088,7 +1089,8 @@ async def get_me(user: dict = Depends(get_current_user)):
         is_active=user["is_active"],
         created_at=user["created_at"],
         form_completed=user.get("form_completed", False),
-        elios_summary=user.get("elios_summary")
+        elios_summary=user.get("elios_summary"),
+        profile_photo_url=user.get("profile_photo_url")
     )
 
 @api_router.post("/auth/change-password")
@@ -1227,6 +1229,29 @@ async def update_user(user_id: str, update: UserUpdate, admin: dict = Depends(ge
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
     
     return {"message": "Usuário atualizado com sucesso"}
+
+@api_router.post("/admin/users/{user_id}/profile-photo")
+async def update_user_profile_photo(
+    user_id: str,
+    profile_photo: UploadFile = File(...),
+    admin: dict = Depends(get_admin_user)
+):
+    """Upload or replace a user's profile photo (admin only)."""
+    existing_user = await db.users.find_one({"id": user_id}, {"_id": 0, "id": 1})
+    if not existing_user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+    profile_photo_url = await upload_profile_picture(user_id, profile_photo)
+
+    await db.users.update_one(
+        {"id": user_id},
+        {"$set": {"profile_photo_url": profile_photo_url}}
+    )
+
+    return {
+        "message": "Foto de perfil atualizada com sucesso",
+        "profile_photo_url": profile_photo_url
+    }
 
 @api_router.delete("/admin/users/{user_id}")
 async def delete_user(user_id: str, admin: dict = Depends(get_admin_user)):
