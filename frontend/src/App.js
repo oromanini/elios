@@ -15,6 +15,7 @@ import MetasPage from './pages/MetasPage';
 import AdminUsersPage from './pages/AdminUsersPage';
 import AdminQuestionsPage from './pages/AdminQuestionsPage';
 import AdminEliosPage from './pages/AdminEliosPage';
+import AdminMentoradosPage from './pages/AdminMentoradosPage';
 
 // Protected Route Component
 const ProtectedRoute = ({ children, adminOnly = false }) => {
@@ -129,6 +130,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute adminOnly>
             <AdminEliosPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/mentorados"
+        element={
+          <ProtectedRoute adminOnly>
+            <AdminMentoradosPage />
           </ProtectedRoute>
         }
       />

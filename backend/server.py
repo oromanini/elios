@@ -138,6 +138,15 @@ class UserUpdate(BaseModel):
     is_active: Optional[bool] = None
     role: Optional[str] = None
 
+class AdminUserFormResponses(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    user_id: str
+    full_name: str
+    email: str
+    created_at: str
+    form_completed: bool = False
+    responses_by_pillar: Dict[str, str]
+
 class QuestionCreate(BaseModel):
     pillar: str
     title: str
@@ -287,6 +296,21 @@ class PasswordChange(BaseModel):
 
 class SystemPromptUpdate(BaseModel):
     prompt: str
+
+PILLARS_WITH_META_MAGNUS = [
+    "ESPIRITUALIDADE",
+    "CUIDADOS COM A SAÚDE",
+    "EQUILÍBRIO EMOCIONAL",
+    "LAZER",
+    "GESTÃO DO TEMPO E ORGANIZAÇÃO",
+    "DESENVOLVIMENTO INTELECTUAL",
+    "IMAGEM PESSOAL",
+    "FAMÍLIA",
+    "CRESCIMENTO PROFISSIONAL",
+    "FINANÇAS",
+    "NETWORKING E CONTRIBUIÇÃO",
+    "META MAGNUS",
+]
 
 # ==================== HELPER FUNCTIONS ====================
 
@@ -995,6 +1019,74 @@ async def list_users(admin: dict = Depends(get_admin_user)):
     """List all users (admin only)"""
     users = await db.users.find({}, {"_id": 0, "password_hash": 0}).to_list(1000)
     return [UserResponse(**u) for u in users]
+
+@api_router.get("/admin/users/form-responses", response_model=List[AdminUserFormResponses])
+async def list_users_form_responses(
+    name: Optional[str] = None,
+    email: Optional[str] = None,
+    registered_from: Optional[str] = None,
+    registered_to: Optional[str] = None,
+    admin: dict = Depends(get_admin_user)
+):
+    """List all default users with their responses grouped by the 11 pillars + Meta Magnus."""
+    user_filter: Dict[str, Any] = {"role": "DEFAULT"}
+
+    if name:
+        user_filter["full_name"] = {"$regex": re.escape(name), "$options": "i"}
+    if email:
+        user_filter["email"] = {"$regex": re.escape(email), "$options": "i"}
+
+    created_at_filter: Dict[str, str] = {}
+    if registered_from:
+        try:
+            from_dt = datetime.fromisoformat(f"{registered_from}T00:00:00+00:00")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="registered_from inválido. Use YYYY-MM-DD.") from exc
+        created_at_filter["$gte"] = from_dt.isoformat()
+
+    if registered_to:
+        try:
+            to_dt = datetime.fromisoformat(f"{registered_to}T23:59:59.999999+00:00")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="registered_to inválido. Use YYYY-MM-DD.") from exc
+        created_at_filter["$lte"] = to_dt.isoformat()
+
+    if created_at_filter:
+        user_filter["created_at"] = created_at_filter
+
+    users = await db.users.find(
+        user_filter,
+        {"_id": 0, "id": 1, "full_name": 1, "email": 1, "created_at": 1, "form_completed": 1}
+    ).sort("created_at", -1).to_list(1000)
+
+    question_docs = await db.questions.find({}, {"_id": 0, "id": 1, "pillar": 1}).to_list(200)
+    question_to_pillar = {question["id"]: question.get("pillar") for question in question_docs}
+
+    results: List[AdminUserFormResponses] = []
+    for user in users:
+        responses = await db.form_responses.find(
+            {"user_id": user["id"]},
+            {"_id": 0, "question_id": 1, "answer": 1, "created_at": 1}
+        ).sort("created_at", 1).to_list(200)
+
+        responses_by_pillar: Dict[str, str] = {pillar: "" for pillar in PILLARS_WITH_META_MAGNUS}
+        for response in responses:
+            pillar = question_to_pillar.get(response.get("question_id"))
+            if pillar in responses_by_pillar:
+                responses_by_pillar[pillar] = response.get("answer", "")
+
+        results.append(
+            AdminUserFormResponses(
+                user_id=user["id"],
+                full_name=user["full_name"],
+                email=user["email"],
+                created_at=user["created_at"],
+                form_completed=user.get("form_completed", False),
+                responses_by_pillar=responses_by_pillar
+            )
+        )
+
+    return results
 
 @api_router.put("/admin/users/{user_id}")
 async def update_user(user_id: str, update: UserUpdate, admin: dict = Depends(get_admin_user)):

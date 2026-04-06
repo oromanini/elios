@@ -14,7 +14,8 @@ import {
   Menu,
   X,
   Brain,
-  FileText
+  FileText,
+  ClipboardList
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { getBackendBaseUrl } from '../config/apiBaseUrl';
@@ -40,6 +41,7 @@ const Sidebar = () => {
 
   const adminItems = [
     { path: '/admin/usuarios', icon: Users, label: 'Usuários' },
+    { path: '/admin/mentorados', icon: ClipboardList, label: 'Respostas' },
     { path: '/admin/perguntas', icon: FileText, label: 'Perguntas' },
     { path: '/admin/elios', icon: Brain, label: 'Treinar ELIOS' },
   ];
