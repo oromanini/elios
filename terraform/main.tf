@@ -84,12 +84,8 @@ resource "google_cloud_run_v2_service" "backend" {
         value = "production"
       }
       env {
-        name  = "MONGO_URL"
-        value = var.mongo_url
-      }
-      env {
-        name  = "DB_NAME"
-        value = var.db_name
+        name  = "MONGO_ATLAS_URI"
+        value = var.mongo_atlas_uri
       }
     }
   }

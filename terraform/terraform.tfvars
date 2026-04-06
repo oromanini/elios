@@ -1,6 +1,5 @@
 project_id        = "elios-492418"
 github_owner      = "oromanini"
 github_repository = "elios"
-db_name           = "elios"
 region            = "us-central1"
 project_number    = "513240742946"
