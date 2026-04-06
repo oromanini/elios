@@ -937,11 +937,17 @@ REGRAS DE ANÁLISE:
                     "Sua resposta está muito boa. Elencou suas dificuldades e definiu metas para enfrentá-las. "
                     "Continue assim nos demais pilares."
                 )
-            objectives = build_analytical_objectives(
-                answer=answer,
-                detected_goals=detected_goals,
-                fallback_objectives=[goal.description for goal in detected_goals[:4]]
-            )
+
+            # Se a IA não retornou objetivos, cria automaticamente
+            if not objectives:
+                objectives = build_analytical_objectives(
+                    answer=answer,
+                    detected_goals=detected_goals,
+                    fallback_objectives=[]
+                )
+
+            # Remove duplicatas mantendo a ordem original
+            objectives = list(dict.fromkeys(objectives))
         else:
             if not feedback:
                 feedback = "Sua resposta precisa melhorar antes de avançar."
