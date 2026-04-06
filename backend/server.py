@@ -36,6 +36,10 @@ db = client['elios']
 JWT_SECRET = os.environ.get('JWT_SECRET', 'default-secret-key')
 JWT_ALGORITHM = "HS256"
 
+CORS_ORIGINS = [origin.strip() for origin in os.environ.get('CORS_ORIGINS', '*').split(',') if origin.strip()]
+if not CORS_ORIGINS:
+    CORS_ORIGINS = ['*']
+
 # AI Configuration (Groq only)
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY', '')
 GROQ_BASE_URL = os.environ.get('GROQ_BASE_URL', 'https://api.groq.com/openai/v1')
@@ -931,23 +935,20 @@ async def register_user(user: UserCreate):
 
 @api_router.post("/auth/login")
 async def login(credentials: UserLogin):
-    """Login admin user"""
+    """Authenticate user and return JWT."""
     user = await db.users.find_one({"email": credentials.email}, {"_id": 0})
-    
+
     if not user:
         raise HTTPException(status_code=401, detail="Credenciais inválidas")
-    
+
     if not verify_password(credentials.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Credenciais inválidas")
 
-    if user.get("role") != "ADMIN":
-        raise HTTPException(status_code=403, detail="Acesso negado. Apenas administradores.")
-    
     if not user.get("is_active", False):
         raise HTTPException(status_code=403, detail="Conta inativa. Aguarde aprovação do administrador.")
-    
+
     token = create_token(user["id"])
-    
+
     return {
         "token": token,
         "user": {
@@ -1547,8 +1548,8 @@ app.include_router(api_router)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_origins=CORS_ORIGINS,
+    allow_credentials=False if CORS_ORIGINS == ["*"] else True,
     allow_methods=["*"],
     allow_headers=["*"],
 )

@@ -29,7 +29,7 @@ api.interceptors.response.use(
       localStorage.removeItem('elios_token');
       localStorage.removeItem('elios_user');
       window.dispatchEvent(new CustomEvent(AUTH_UNAUTHORIZED_EVENT));
-      window.location.href = '/';
+      window.location.href = '/login';
     }
     return Promise.reject(error);
   }
