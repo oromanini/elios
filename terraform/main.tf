@@ -126,29 +126,25 @@ resource "google_cloud_run_v2_service" "backend" {
         value = var.db_name
       }
 
-      env {
-        name  = "JWT_SECRET"
-        value = var.jwt_secret
-      }
 
       env {
         name  = "R2_ACCESS_KEY"
-        value = var.r2_access_key
+        value = coalesce(var.r2_access_key, "dummy")
       }
 
       env {
         name  = "R2_SECRET_KEY"
-        value = var.r2_secret_key
+        value = coalesce(var.r2_secret_key, "dummy")
       }
 
       env {
         name  = "R2_ENDPOINT"
-        value = var.r2_endpoint
+        value = coalesce(var.r2_endpoint, "https://dummy.invalid")
       }
 
       env {
         name  = "R2_BUCKET_NAME"
-        value = var.r2_bucket_name
+        value = coalesce(var.r2_bucket_name, "dummy")
       }
     }
   }
