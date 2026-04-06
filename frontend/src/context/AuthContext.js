@@ -1,30 +1,41 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import axios from 'axios';
-import { getBackendBaseUrl } from '../config/apiBaseUrl';
+import { authAPI, AUTH_UNAUTHORIZED_EVENT } from '../services/api';
 
 const AuthContext = createContext(null);
 
-const API_URL = getBackendBaseUrl();
+const AUTH_TOKEN_KEY = 'elios_token';
+const AUTH_USER_KEY = 'elios_user';
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(localStorage.getItem('elios_token'));
+  const [token, setToken] = useState(localStorage.getItem(AUTH_TOKEN_KEY));
   const [loading, setLoading] = useState(true);
+
+  const clearAuthState = () => {
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+    localStorage.removeItem(AUTH_USER_KEY);
+    setToken(null);
+    setUser(null);
+  };
 
   useEffect(() => {
     const initAuth = async () => {
-      const savedToken = localStorage.getItem('elios_token');
+      const savedToken = localStorage.getItem(AUTH_TOKEN_KEY);
+      const savedUser = localStorage.getItem(AUTH_USER_KEY);
       if (savedToken) {
         try {
-          const response = await axios.get(`${API_URL}/api/auth/me`, {
-            headers: { Authorization: `Bearer ${savedToken}` }
-          });
+          const response = await authAPI.getMe();
+          localStorage.setItem(AUTH_USER_KEY, JSON.stringify(response.data));
           setUser(response.data);
           setToken(savedToken);
         } catch (error) {
-          console.error('Token invalid:', error);
-          localStorage.removeItem('elios_token');
-          setToken(null);
+          clearAuthState();
+        }
+      } else if (savedUser) {
+        try {
+          setUser(JSON.parse(savedUser));
+        } catch (error) {
+          localStorage.removeItem(AUTH_USER_KEY);
           setUser(null);
         }
       }
@@ -34,23 +45,30 @@ export const AuthProvider = ({ children }) => {
     initAuth();
   }, []);
 
+  useEffect(() => {
+    const handleUnauthorized = () => {
+      clearAuthState();
+    };
+
+    window.addEventListener(AUTH_UNAUTHORIZED_EVENT, handleUnauthorized);
+    return () => {
+      window.removeEventListener(AUTH_UNAUTHORIZED_EVENT, handleUnauthorized);
+    };
+  }, []);
+
   const login = async (email, password) => {
-    const response = await axios.post(`${API_URL}/api/auth/login`, {
-      email,
-      password
-    });
+    const response = await authAPI.login(email, password);
     
     const { token: newToken, user: userData } = response.data;
-    localStorage.setItem('elios_token', newToken);
+    localStorage.setItem(AUTH_TOKEN_KEY, newToken);
+    localStorage.setItem(AUTH_USER_KEY, JSON.stringify(userData));
     setToken(newToken);
     setUser(userData);
     return userData;
   };
 
   const logout = () => {
-    localStorage.removeItem('elios_token');
-    setToken(null);
-    setUser(null);
+    clearAuthState();
   };
 
   const isAdmin = () => {
