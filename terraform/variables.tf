@@ -46,39 +46,67 @@ variable "mongo_url" {
   description = "MongoDB Atlas connection string"
   type        = string
   sensitive   = true
+  default     = ""
 }
 
 variable "db_name" {
   description = "MongoDB database name"
   type        = string
+  default     = "elios"
 }
 
 variable "jwt_secret" {
   description = "JWT secret for backend"
   type        = string
   sensitive   = true
+  default     = ""
 }
 
 variable "r2_access_key" {
   description = "Cloudflare R2 access key"
   type        = string
   sensitive   = true
+  default     = ""
 }
 
 variable "r2_secret_key" {
   description = "Cloudflare R2 secret key"
   type        = string
   sensitive   = true
+  default     = ""
 }
 
 variable "r2_endpoint" {
   description = "Cloudflare R2 S3 endpoint"
   type        = string
+  default     = ""
 }
 
 variable "r2_bucket_name" {
   description = "Cloudflare R2 bucket name"
   type        = string
+  default     = ""
+}
+
+variable "groq_api_key" {
+  description = "Groq API key"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "user" {
+  description = "Auxiliary app user secret"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "password" {
+  description = "Auxiliary app password secret"
+  type        = string
+  sensitive   = true
+  default     = ""
 }
 
 variable "frontend_domain" {

@@ -39,6 +39,34 @@ jobs:
       - name: Configure Docker auth for Artifact Registry
         run: gcloud auth configure-docker "${{ env.REGION }}-docker.pkg.dev" --quiet
 
+      - name: Terraform init
+        working-directory: ./terraform
+        env:
+          TF_INPUT: "0"
+        run: terraform init -input=false
+
+      - name: Terraform apply (infra base)
+        working-directory: ./terraform
+        env:
+          TF_INPUT: "0"
+        run: |
+          terraform apply -input=false -auto-approve \
+            -var="project_id=${{ env.PROJECT_ID }}" \
+            -var="project_number=${{ secrets.GCP_PROJECT_NUMBER }}" \
+            -var="region=${{ env.REGION }}" \
+            -var="github_owner=${{ github.repository_owner }}" \
+            -var="github_repository=${{ github.event.repository.name }}" \
+            -var="mongo_url=${{ secrets.MONGO_URL }}" \
+            -var="db_name=${{ secrets.DB_NAME }}" \
+            -var="r2_access_key=${{ secrets.R2_ACCESS_KEY }}" \
+            -var="r2_secret_key=${{ secrets.R2_SECRET_KEY }}" \
+            -var="r2_endpoint=${{ secrets.R2_ENDPOINT }}" \
+            -var="r2_bucket_name=${{ secrets.R2_BUCKET_NAME }}" \
+            -var="jwt_secret=${{ secrets.JWT_SECRET }}" \
+            -var="groq_api_key=${{ secrets.GROQ_API_KEY }}" \
+            -var="user=${{ secrets.USER }}" \
+            -var="password=${{ secrets.PASSWORD }}"
+
       - name: Build and push backend image
         env:
           IMAGE_TAG: ${{ github.sha }}
@@ -56,7 +84,7 @@ jobs:
             --platform=managed \
             --allow-unauthenticated \
             --image="${{ env.BACKEND_IMAGE }}" \
-            --set-env-vars="ENV=production,DB_NAME=${{ secrets.DB_NAME }},MONGO_URL=${{ secrets.MONGO_URL }},JWT_SECRET=${{ secrets.JWT_SECRET }},R2_ACCESS_KEY=${{ secrets.R2_ACCESS_KEY }},R2_SECRET_KEY=${{ secrets.R2_SECRET_KEY }},R2_ENDPOINT=${{ secrets.R2_ENDPOINT }},R2_BUCKET_NAME=${{ secrets.R2_BUCKET_NAME }}"
+            --set-env-vars="ENV=production,DB_NAME=${{ secrets.DB_NAME }},MONGO_URL=${{ secrets.MONGO_URL }},JWT_SECRET=${{ secrets.JWT_SECRET }},GROQ_API_KEY=${{ secrets.GROQ_API_KEY }},USER=${{ secrets.USER }},PASSWORD=${{ secrets.PASSWORD }},R2_ACCESS_KEY=${{ secrets.R2_ACCESS_KEY }},R2_SECRET_KEY=${{ secrets.R2_SECRET_KEY }},R2_ENDPOINT=${{ secrets.R2_ENDPOINT }},R2_BUCKET_NAME=${{ secrets.R2_BUCKET_NAME }}"
 
       - name: Capture backend URL
         run: |
