@@ -38,6 +38,12 @@ jobs:
         with:
           project_id: ${{ env.PROJECT_ID }}
 
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.5.7" # A versão que você está usando no seu Mac
+          terraform_wrapper: false      
+          
       - name: Configure Docker auth for Artifact Registry
         run: gcloud auth configure-docker "${{ env.REGION }}-docker.pkg.dev" --quiet
 
