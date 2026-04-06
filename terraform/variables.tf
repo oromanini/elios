@@ -81,20 +81,6 @@ variable "r2_bucket_name" {
   default     = ""
 }
 
-variable "jwt_secret" {
-  description = "JWT signing secret"
-  type        = string
-  sensitive   = true
-  default     = ""
-}
-
-variable "groq_api_key" {
-  description = "Groq API key"
-  type        = string
-  sensitive   = true
-  default     = ""
-}
-
 variable "user" {
   description = "Application user"
   type        = string
