@@ -1,4 +1,5 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, BackgroundTasks, UploadFile, File, Form, Request, Response
+from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -80,6 +81,8 @@ LOGIN_ATTEMPTS: Dict[str, List[datetime]] = {}
 MAX_LOGIN_ATTEMPTS = int(os.environ.get("MAX_LOGIN_ATTEMPTS", "5"))
 LOGIN_WINDOW_MINUTES = int(os.environ.get("LOGIN_WINDOW_MINUTES", "15"))
 INIT_SETUP_TOKEN = os.environ.get("INIT_SETUP_TOKEN", "")
+CSRF_HEADER_NAME = "X-Elios-CSRF"
+CSRF_HEADER_VALUE = "elios-secure-request"
 
 # Create the main app without a prefix
 app = FastAPI(title="ELIOS - Sistema de Performance Elite")
@@ -2067,6 +2070,17 @@ async def init_admin(setup_token: Optional[str] = None):
 
 # Include the router in the main app
 app.include_router(api_router)
+
+@app.middleware("http")
+async def csrf_header_middleware(request: Request, call_next):
+    if request.url.path.startswith("/api") and request.method in {"POST", "PUT", "DELETE"}:
+        if request.headers.get(CSRF_HEADER_NAME) != CSRF_HEADER_VALUE:
+            return JSONResponse(
+                status_code=status.HTTP_403_FORBIDDEN,
+                content={"detail": "CSRF validation failed."}
+            )
+
+    return await call_next(request)
 
 app.add_middleware(
     CORSMiddleware,

@@ -4,13 +4,16 @@ import { getBackendBaseUrl } from '../config/apiBaseUrl';
 
 const API_URL = getBackendBaseUrl();
 export const AUTH_UNAUTHORIZED_EVENT = 'elios:auth-unauthorized';
+export const CSRF_HEADER_NAME = 'X-Elios-CSRF';
+export const CSRF_HEADER_VALUE = 'elios-secure-request';
 axios.defaults.withCredentials = true;
 
 const api = axios.create({
   baseURL: `${API_URL}/api`,
   withCredentials: true,
   headers: {
-    'Content-Type': 'application/json'
+    'Content-Type': 'application/json',
+    [CSRF_HEADER_NAME]: CSRF_HEADER_VALUE
   }
 });
 
