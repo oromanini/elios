@@ -1,50 +1,82 @@
-# Security Review - ELIOS
+# Security Review (OWASP) - ELIOS
 
-## Scope
-- Backend FastAPI app (`backend/server.py`)
-- Frontend React app (`frontend/src`)
-- Deployment baseline (`docker-compose.yml`, Dockerfiles)
+Data da varredura: 2026-04-07
+Escopo:
+- Backend FastAPI (`backend/server.py`)
+- Frontend React (`frontend/src`)
+- Infra/deploy (`docker-compose.yml`, `terraform/*`)
 
-## High Priority Findings
+## Metodologia (OWASP ASVS + OWASP Top 10)
+- Revisão estática de autenticação, autorização, validação de entrada, tratamento de erro e exposição de dados.
+- Busca de segredos e configurações inseguras no repositório.
+- Revisão de pontos de risco em transporte/armazenamento de tokens no frontend.
 
-1. **Hardcoded default JWT secret fallback**
-   - Risk: token forgery if app runs with default secret.
-   - Location: `backend/server.py` (`default-secret-key`).
-   - Recommendation: fail startup if `JWT_SECRET` is missing in non-dev environments.
+## Achados e status
 
-2. **Admin bootstrap endpoint returns static credentials**
-   - Risk: account takeover if endpoint is exposed and not disabled after initialization.
-   - Location: `POST /api/init/admin` in `backend/server.py`.
-   - Recommendation: disable endpoint in production or require one-time setup token.
+### 1) Autenticação e sessão (A07 / V2)
 
-3. **Wildcard CORS allowed by default**
-   - Risk: wider attack surface for browser-based requests.
-   - Location: CORS middleware defaults to `*`.
-   - Recommendation: set explicit allowed origins per environment.
+**Antes da correção**
+- JWT sem expiração explícita.
+- Fallback inseguro de `JWT_SECRET` possível em produção.
+- Sem proteção contra brute force em `/api/auth/login`.
 
-4. **AI error details exposed to end users**
-   - Risk: information leakage.
-   - Location: AI exception messages returned directly in responses.
-   - Recommendation: return generic user-safe errors and log detailed internals only server-side.
+**Correções aplicadas**
+- Token JWT com `iat` e `exp` (configurável via `JWT_EXP_HOURS`, padrão 12h).
+- Bloqueio de inicialização em produção quando `JWT_SECRET` está no valor padrão.
+- Rate limiting em memória por email+IP no login (`MAX_LOGIN_ATTEMPTS` e `LOGIN_WINDOW_MINUTES`).
 
-## Medium Priority Findings
+### 2) Credenciais e senhas (A02/A07 / V2)
 
-1. **No brute-force protection on login endpoint**
-   - Recommendation: add rate limiting and lockout policy.
+**Antes da correção**
+- Senhas com baixa complexidade podiam ser aceitas em alguns fluxos.
 
-2. **No password complexity check on change-password/register**
-   - Recommendation: enforce minimum length and complexity rules.
+**Correções aplicadas**
+- Política mínima: 10+ caracteres, maiúscula, minúscula e número.
+- Validação aplicada em:
+  - cadastro público com senha explícita,
+  - troca de senha,
+  - criação de admin.
+- Fluxo de **esqueci minha senha** com token de uso único e expiração (`/api/auth/forgot-password` e `/api/auth/reset-password`).
 
-3. **No explicit request size limits**
-   - Recommendation: constrain payload size, especially in chat endpoints.
+### 3) Exposição de superfícies de setup (A01 / V4)
 
-## Positive Notes
-- Passwords are hashed with bcrypt.
-- JWT expiration is configured.
-- Role checks exist for admin routes.
+**Antes da correção**
+- Endpoints `/api/init/admin` e `/api/init/questions` podiam ser usados indevidamente em produção.
 
-## Immediate Action Plan
-1. Configure `JWT_SECRET`, `CORS_ORIGINS`, and `AI_PROVIDER` only via env.
-2. Rotate credentials and API keys already shared in chat.
-3. Restrict `/init/*` endpoints to local setup workflow.
-4. Add rate limiting middleware and standardized error handling.
+**Correções aplicadas**
+- Em produção, endpoints de inicialização exigem `INIT_SETUP_TOKEN`; sem token configurado, ficam desativados.
+
+### 4) Vazamento de informação em erros (A09 / V10)
+
+**Antes da correção**
+- Erros de integração com IA podiam retornar detalhes internos ao usuário.
+
+**Correções aplicadas**
+- Mensagens externas padronizadas e seguras.
+- Detalhes técnicos mantidos apenas em log do servidor.
+
+## Riscos ainda abertos (não corrigidos neste patch)
+
+1. **Token em `localStorage` no frontend**
+   - Risco: em caso de XSS, um invasor pode ler o token.
+   - Recomendação: migrar para cookie `HttpOnly` + `Secure` + `SameSite`.
+
+2. **Arquivos de estado Terraform no repositório**
+   - `terraform.tfstate` e backups estão versionados.
+   - Risco: estado pode conter metadados e, dependendo dos recursos, segredos.
+   - Recomendação: remover do git, rotacionar credenciais e usar backend remoto seguro (S3/GCS/TF Cloud + criptografia + locking).
+
+3. **Rate limiting em memória**
+   - Em ambiente multi-instância não é compartilhado.
+   - Recomendação: mover para Redis (chaves por IP, email e rota), com observabilidade.
+
+4. **CORS permissivo por padrão em algumas implantações**
+   - Recomendação: definir `CORS_ORIGINS` explicitamente por ambiente e sem wildcard em produção.
+
+## Checklist rápido (produção)
+- [ ] `JWT_SECRET` forte, único e rotacionado.
+- [ ] `INIT_SETUP_TOKEN` definido ou endpoints `/init/*` desabilitados por gateway.
+- [ ] `CORS_ORIGINS` explícito (sem `*`).
+- [ ] Redis para rate limiting distribuído.
+- [ ] Cookies `HttpOnly` para sessão no frontend.
+- [ ] Terraform state fora do git e com criptografia.

@@ -16,6 +16,7 @@ import AdminUsersPage from './pages/AdminUsersPage';
 import AdminQuestionsPage from './pages/AdminQuestionsPage';
 import AdminEliosPage from './pages/AdminEliosPage';
 import AdminMentoradosPage from './pages/AdminMentoradosPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
 
 // Protected Route Component
 const ProtectedRoute = ({ children, adminOnly = false }) => {
@@ -68,6 +69,14 @@ function AppRoutes() {
         element={
           <PublicRoute>
             <LoginPage />
+          </PublicRoute>
+        }
+      />
+      <Route
+        path="/esqueci-senha"
+        element={
+          <PublicRoute>
+            <ForgotPasswordPage />
           </PublicRoute>
         }
       />

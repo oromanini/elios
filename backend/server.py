@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, BackgroundTasks, UploadFile, File, Form
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, BackgroundTasks, UploadFile, File, Form, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -11,7 +11,7 @@ import json
 from pydantic import BaseModel, Field, ConfigDict, EmailStr
 from typing import List, Optional, Dict, Any
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import jwt
 import bcrypt
 import smtplib
@@ -22,6 +22,7 @@ import string
 import asyncio
 import requests
 import re
+import hashlib
 from PIL import Image, UnidentifiedImageError
 
 ROOT_DIR = Path(__file__).parent
@@ -35,6 +36,7 @@ db = client['elios']
 # JWT Configuration
 JWT_SECRET = os.environ.get('JWT_SECRET', 'default-secret-key')
 JWT_ALGORITHM = "HS256"
+JWT_EXP_HOURS = int(os.environ.get("JWT_EXP_HOURS", "12"))
 
 CORS_ORIGINS = [origin.strip() for origin in os.environ.get('CORS_ORIGINS', '*').split(',') if origin.strip()]
 if not CORS_ORIGINS:
@@ -51,6 +53,8 @@ SMTP_HOST = os.environ.get('SMTP_HOST', 'smtp.hostinger.com')
 SMTP_PORT = int(os.environ.get('SMTP_PORT', 465))
 SMTP_EMAIL = os.environ.get('SMTP_EMAIL', '')
 SMTP_PASSWORD = os.environ.get('SMTP_PASSWORD', '')
+FRONTEND_RESET_PASSWORD_URL = os.environ.get("FRONTEND_RESET_PASSWORD_URL", "")
+RESET_PASSWORD_TTL_MINUTES = int(os.environ.get("RESET_PASSWORD_TTL_MINUTES", "30"))
 
 # Upload Configuration
 ENV = os.environ.get('ENV', 'development').lower()
@@ -61,8 +65,15 @@ R2_ENDPOINT = os.environ.get('R2_ENDPOINT', '')
 R2_BUCKET_NAME = os.environ.get('R2_BUCKET_NAME', '')
 R2_PUBLIC_BASE_URL = os.environ.get('R2_PUBLIC_BASE_URL', '')
 
+if ENV == "production" and JWT_SECRET == "default-secret-key":
+    raise RuntimeError("JWT_SECRET inválido em produção. Configure um segredo forte via variável de ambiente.")
+
 # Security
 security = HTTPBearer()
+LOGIN_ATTEMPTS: Dict[str, List[datetime]] = {}
+MAX_LOGIN_ATTEMPTS = int(os.environ.get("MAX_LOGIN_ATTEMPTS", "5"))
+LOGIN_WINDOW_MINUTES = int(os.environ.get("LOGIN_WINDOW_MINUTES", "15"))
+INIT_SETUP_TOKEN = os.environ.get("INIT_SETUP_TOKEN", "")
 
 # Create the main app without a prefix
 app = FastAPI(title="ELIOS - Sistema de Performance Elite")
@@ -303,6 +314,13 @@ class PasswordChange(BaseModel):
     current_password: str
     new_password: str
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
 class SystemPromptUpdate(BaseModel):
     prompt: str
 
@@ -335,6 +353,57 @@ def hash_password(password: str) -> str:
 def verify_password(password: str, hashed: str) -> bool:
     """Verify a password against its hash"""
     return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
+
+def validate_password_strength(password: str) -> None:
+    """Validate password minimum complexity."""
+    if len(password) < 10:
+        raise HTTPException(status_code=400, detail="A senha deve ter no mínimo 10 caracteres.")
+    if not re.search(r"[A-Z]", password):
+        raise HTTPException(status_code=400, detail="A senha deve incluir ao menos uma letra maiúscula.")
+    if not re.search(r"[a-z]", password):
+        raise HTTPException(status_code=400, detail="A senha deve incluir ao menos uma letra minúscula.")
+    if not re.search(r"\d", password):
+        raise HTTPException(status_code=400, detail="A senha deve incluir ao menos um número.")
+
+def _prune_attempts(attempts: List[datetime], now: datetime) -> List[datetime]:
+    window_start = now - timedelta(minutes=LOGIN_WINDOW_MINUTES)
+    return [attempt for attempt in attempts if attempt >= window_start]
+
+def ensure_login_not_rate_limited(identifier: str) -> None:
+    now = datetime.now(timezone.utc)
+    recent_attempts = _prune_attempts(LOGIN_ATTEMPTS.get(identifier, []), now)
+    LOGIN_ATTEMPTS[identifier] = recent_attempts
+    if len(recent_attempts) >= MAX_LOGIN_ATTEMPTS:
+        raise HTTPException(
+            status_code=429,
+            detail="Muitas tentativas de login. Tente novamente em alguns minutos."
+        )
+
+def record_failed_login_attempt(identifier: str) -> None:
+    now = datetime.now(timezone.utc)
+    recent_attempts = _prune_attempts(LOGIN_ATTEMPTS.get(identifier, []), now)
+    recent_attempts.append(now)
+    LOGIN_ATTEMPTS[identifier] = recent_attempts
+
+def clear_login_attempts(identifier: str) -> None:
+    LOGIN_ATTEMPTS.pop(identifier, None)
+
+def ensure_init_route_allowed(setup_token: Optional[str]) -> None:
+    """Protect one-time init endpoints in production."""
+    if ENV != "production":
+        return
+    if not INIT_SETUP_TOKEN:
+        raise HTTPException(status_code=403, detail="Endpoint de inicialização desativado em produção.")
+    if setup_token != INIT_SETUP_TOKEN:
+        raise HTTPException(status_code=403, detail="Token de inicialização inválido.")
+
+def generate_password_reset_token() -> tuple[str, str]:
+    token = secrets.token_urlsafe(48)
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    return token, token_hash
+
+def hash_password_reset_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 async def optimize_profile_picture(file: UploadFile) -> BytesIO:
     """Validate and optimize a profile image before upload."""
@@ -416,8 +485,11 @@ async def upload_profile_picture(user_id: str, file: UploadFile) -> str:
 
 def create_token(user_id: str) -> str:
     """Create a JWT token"""
+    now = datetime.now(timezone.utc)
     payload = {
-        "user_id": user_id
+        "user_id": user_id,
+        "iat": now,
+        "exp": now + timedelta(hours=JWT_EXP_HOURS),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
@@ -526,6 +598,61 @@ def send_welcome_email(to_email: str, full_name: str, password: str):
         return True
     except Exception as e:
         logger.error(f"Failed to send email: {e}")
+        return False
+
+def send_password_reset_email(to_email: str, full_name: str, reset_token: str):
+    """Send password reset instructions."""
+    try:
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = 'ELIOS - Redefinição de Senha'
+        msg['From'] = SMTP_EMAIL
+        msg['To'] = to_email
+
+        reset_link = (
+            f"{FRONTEND_RESET_PASSWORD_URL.rstrip('/')}?token={reset_token}"
+            if FRONTEND_RESET_PASSWORD_URL else ""
+        )
+
+        instructions = (
+            f'<p class="body-text"><a href="{reset_link}">Clique aqui para redefinir sua senha</a></p>'
+            if reset_link else
+            f'<p class="body-text">Use este token para redefinir sua senha: <strong>{reset_token}</strong></p>'
+        )
+
+        html = f"""
+        <html>
+        <head>
+            <style>
+                body {{ font-family: Arial, sans-serif; background-color: #0d0d0d; color: #e5e7eb; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 40px; background-color: #141414; border-radius: 10px; }}
+                .body-text {{ color: #e5e7eb; }}
+                .warning {{ background-color: #f59e0b20; border-left: 4px solid #f59e0b; color: #fde68a; padding: 15px; margin-top: 20px; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <p class="body-text">Olá, <strong>{full_name}</strong>.</p>
+                <p class="body-text">Recebemos uma solicitação para redefinir sua senha no ELIOS.</p>
+                {instructions}
+                <div class="warning">
+                    Este link/token expira em {RESET_PASSWORD_TTL_MINUTES} minutos.
+                    Se você não solicitou essa alteração, ignore este email.
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
+        msg.attach(MIMEText(html, 'html'))
+
+        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT) as server:
+            server.login(SMTP_EMAIL, SMTP_PASSWORD)
+            server.sendmail(SMTP_EMAIL, to_email, msg.as_string())
+
+        logger.info(f"Password reset email sent to {to_email}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send password reset email: {e}")
         return False
 
 # ==================== AI FUNCTIONS ====================
@@ -742,7 +869,7 @@ async def call_ai_provider(
             logger.error(
                 f"{provider['name']} API error: {response.status_code} - {response.text}"
             )
-            return f"Erro na API: {response.status_code}. Tente novamente."
+            return "Serviço de IA temporariamente indisponível. Tente novamente em instantes."
 
         data = response.json()
         return data["choices"][0]["message"]["content"]
@@ -752,7 +879,7 @@ async def call_ai_provider(
         return "A resposta demorou muito. Por favor, tente novamente."
     except Exception as e:
         logger.error(f"{provider['name']} API error: {e}")
-        return f"Erro ao processar sua mensagem: {str(e)}"
+        return "Erro interno ao processar sua mensagem. Tente novamente."
 
 async def chat_with_elios(user_id: str, message: str, context: str = None, pillar: str = None) -> str:
     """Main function to chat with ELIOS"""
@@ -1031,6 +1158,8 @@ async def register_user(user: UserCreate):
         )
     
     password = user.password or generate_password()
+    if user.password:
+        validate_password_strength(user.password)
     
     user_doc = {
         "id": str(uuid.uuid4()),
@@ -1053,19 +1182,26 @@ async def register_user(user: UserCreate):
     }
 
 @api_router.post("/auth/login")
-async def login(credentials: UserLogin):
+async def login(credentials: UserLogin, request: Request):
     """Authenticate user and return JWT."""
+    client_ip = request.client.host if request.client else "unknown"
+    identity_key = f"{credentials.email.lower()}|{client_ip}"
+    ensure_login_not_rate_limited(identity_key)
+
     user = await db.users.find_one({"email": credentials.email}, {"_id": 0})
 
     if not user:
+        record_failed_login_attempt(identity_key)
         raise HTTPException(status_code=401, detail="Credenciais inválidas")
 
     if not verify_password(credentials.password, user["password_hash"]):
+        record_failed_login_attempt(identity_key)
         raise HTTPException(status_code=401, detail="Credenciais inválidas")
 
     if not user.get("is_active", False):
         raise HTTPException(status_code=403, detail="Conta inativa. Aguarde aprovação do administrador.")
 
+    clear_login_attempts(identity_key)
     token = create_token(user["id"])
 
     return {
@@ -1101,6 +1237,7 @@ async def change_password(data: PasswordChange, user: dict = Depends(get_current
     """Change user password"""
     if not verify_password(data.current_password, user["password_hash"]):
         raise HTTPException(status_code=400, detail="Senha atual incorreta")
+    validate_password_strength(data.new_password)
     
     await db.users.update_one(
         {"id": user["id"]},
@@ -1108,6 +1245,67 @@ async def change_password(data: PasswordChange, user: dict = Depends(get_current
     )
     
     return {"message": "Senha alterada com sucesso"}
+
+@api_router.post("/auth/forgot-password")
+async def forgot_password(payload: ForgotPasswordRequest):
+    """Generate a password reset token and send instructions by email."""
+    user = await db.users.find_one({"email": payload.email}, {"_id": 0})
+    if not user:
+        # Resposta neutra para evitar enumeração de usuários
+        return {"message": "Se o email existir, enviaremos instruções para redefinição de senha."}
+
+    token, token_hash = generate_password_reset_token()
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(minutes=RESET_PASSWORD_TTL_MINUTES)
+
+    await db.password_reset_tokens.update_many(
+        {"user_id": user["id"], "used_at": None},
+        {"$set": {"used_at": now.isoformat()}}
+    )
+
+    await db.password_reset_tokens.insert_one(
+        {
+            "id": str(uuid.uuid4()),
+            "user_id": user["id"],
+            "token_hash": token_hash,
+            "created_at": now.isoformat(),
+            "expires_at": expires_at.isoformat(),
+            "used_at": None,
+        }
+    )
+
+    send_password_reset_email(payload.email, user.get("full_name", "Usuário"), token)
+    return {"message": "Se o email existir, enviaremos instruções para redefinição de senha."}
+
+@api_router.post("/auth/reset-password")
+async def reset_password(payload: ResetPasswordRequest):
+    """Reset user password using one-time token."""
+    validate_password_strength(payload.new_password)
+    token_hash = hash_password_reset_token(payload.token)
+
+    token_doc = await db.password_reset_tokens.find_one({"token_hash": token_hash}, {"_id": 0})
+    if not token_doc:
+        raise HTTPException(status_code=400, detail="Token inválido ou expirado.")
+    if token_doc.get("used_at"):
+        raise HTTPException(status_code=400, detail="Token já utilizado.")
+
+    try:
+        expires_at = datetime.fromisoformat(token_doc["expires_at"])
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Token inválido ou expirado.") from exc
+    if expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=400, detail="Token inválido ou expirado.")
+
+    await db.users.update_one(
+        {"id": token_doc["user_id"]},
+        {"$set": {"password_hash": hash_password(payload.new_password)}}
+    )
+    await db.password_reset_tokens.update_one(
+        {"id": token_doc["id"]},
+        {"$set": {"used_at": datetime.now(timezone.utc).isoformat()}}
+    )
+
+    return {"message": "Senha redefinida com sucesso."}
 
 # ---- USERS ROUTES (ADMIN) ----
 
@@ -1122,6 +1320,7 @@ async def create_user_by_admin(payload: AdminUserCreate, admin: dict = Depends(g
     """Create a new admin user (admin only)."""
     if payload.role != "ADMIN":
         raise HTTPException(status_code=400, detail="Este endpoint cria apenas usuários ADMIN")
+    validate_password_strength(payload.password)
 
     existing = await db.users.find_one({"email": payload.email})
     if existing:
@@ -1782,8 +1981,9 @@ async def get_dashboard_stats(user: dict = Depends(get_current_user)):
 # ---- INIT DEFAULT DATA ----
 
 @api_router.post("/init/questions")
-async def init_default_questions():
+async def init_default_questions(setup_token: Optional[str] = None):
     """Initialize default questions (run once)"""
+    ensure_init_route_allowed(setup_token)
     existing = await db.questions.count_documents({})
     if existing > 0:
         return {"message": "Perguntas já existem", "count": existing}
@@ -1811,8 +2011,9 @@ async def init_default_questions():
     return {"message": "Perguntas criadas com sucesso", "count": len(default_questions)}
 
 @api_router.post("/init/admin")
-async def init_admin():
+async def init_admin(setup_token: Optional[str] = None):
     """Initialize admin user (run once)"""
+    ensure_init_route_allowed(setup_token)
     existing = await db.users.find_one({"role": "ADMIN"})
     if existing:
         return {"message": "Admin já existe", "email": existing["email"]}
@@ -1850,7 +2051,3 @@ app.add_middleware(
 @app.on_event("shutdown")
 async def shutdown_db_client():
     client.close()
-    if "email" in update_dict:
-        existing = await db.users.find_one({"email": update_dict["email"], "id": {"$ne": user_id}})
-        if existing:
-            raise HTTPException(status_code=400, detail="Email já cadastrado")
