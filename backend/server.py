@@ -1,5 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, BackgroundTasks, UploadFile, File, Form, Request
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, BackgroundTasks, UploadFile, File, Form, Request, Response
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -37,10 +36,18 @@ db = client['elios']
 JWT_SECRET = os.environ.get('JWT_SECRET', 'default-secret-key')
 JWT_ALGORITHM = "HS256"
 JWT_EXP_HOURS = int(os.environ.get("JWT_EXP_HOURS", "12"))
+JWT_COOKIE_NAME = os.environ.get("JWT_COOKIE_NAME", "elios_token")
+JWT_COOKIE_MAX_AGE = JWT_EXP_HOURS * 3600
 
-CORS_ORIGINS = [origin.strip() for origin in os.environ.get('CORS_ORIGINS', '*').split(',') if origin.strip()]
+CORS_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get('CORS_ORIGINS', os.environ.get('FRONTEND_URL', 'http://localhost:3000')).split(',')
+    if origin.strip()
+]
 if not CORS_ORIGINS:
-    CORS_ORIGINS = ['*']
+    CORS_ORIGINS = ['http://localhost:3000']
+if '*' in CORS_ORIGINS:
+    raise RuntimeError('CORS_ORIGINS não pode conter "*" quando cookies com credenciais estão habilitados.')
 
 # AI Configuration (Groq only)
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY', '')
@@ -69,7 +76,6 @@ if ENV == "production" and JWT_SECRET == "default-secret-key":
     raise RuntimeError("JWT_SECRET inválido em produção. Configure um segredo forte via variável de ambiente.")
 
 # Security
-security = HTTPBearer()
 LOGIN_ATTEMPTS: Dict[str, List[datetime]] = {}
 MAX_LOGIN_ATTEMPTS = int(os.environ.get("MAX_LOGIN_ATTEMPTS", "5"))
 LOGIN_WINDOW_MINUTES = int(os.environ.get("LOGIN_WINDOW_MINUTES", "15"))
@@ -503,9 +509,11 @@ def decode_token(token: str) -> dict:
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Token inválido")
 
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_current_user(request: Request):
     """Get the current authenticated user"""
-    token = credentials.credentials
+    token = request.cookies.get(JWT_COOKIE_NAME)
+    if not token:
+        raise HTTPException(status_code=401, detail="Não autenticado")
     payload = decode_token(token)
     user = await db.users.find_one({"id": payload["user_id"]}, {"_id": 0})
     if not user:
@@ -514,9 +522,8 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         raise HTTPException(status_code=403, detail="Usuário inativo. Aguarde aprovação do administrador.")
     return user
 
-async def get_admin_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_admin_user(user: dict = Depends(get_current_user)):
     """Get the current user and verify they are an admin"""
-    user = await get_current_user(credentials)
     if user.get("role") != "ADMIN":
         raise HTTPException(status_code=403, detail="Acesso negado. Apenas administradores.")
     return user
@@ -1182,8 +1189,8 @@ async def register_user(user: UserCreate):
     }
 
 @api_router.post("/auth/login")
-async def login(credentials: UserLogin, request: Request):
-    """Authenticate user and return JWT."""
+async def login(credentials: UserLogin, request: Request, response: Response):
+    """Authenticate user and set JWT cookie."""
     client_ip = request.client.host if request.client else "unknown"
     identity_key = f"{credentials.email.lower()}|{client_ip}"
     ensure_login_not_rate_limited(identity_key)
@@ -1204,8 +1211,17 @@ async def login(credentials: UserLogin, request: Request):
     clear_login_attempts(identity_key)
     token = create_token(user["id"])
 
+    response.set_cookie(
+        key=JWT_COOKIE_NAME,
+        value=token,
+        httponly=True,
+        secure=True,
+        samesite="none",
+        max_age=JWT_COOKIE_MAX_AGE,
+        path="/"
+    )
+
     return {
-        "token": token,
         "user": {
             "id": user["id"],
             "full_name": user["full_name"],
@@ -1231,6 +1247,18 @@ async def get_me(user: dict = Depends(get_current_user)):
         elios_summary=user.get("elios_summary"),
         profile_photo_url=user.get("profile_photo_url")
     )
+
+@api_router.post("/auth/logout")
+async def logout(response: Response):
+    """Clear auth cookie."""
+    response.delete_cookie(
+        key=JWT_COOKIE_NAME,
+        path="/",
+        secure=True,
+        httponly=True,
+        samesite="none"
+    )
+    return {"message": "Logout realizado com sucesso"}
 
 @api_router.post("/auth/change-password")
 async def change_password(data: PasswordChange, user: dict = Depends(get_current_user)):
@@ -2043,7 +2071,7 @@ app.include_router(api_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
-    allow_credentials=False if CORS_ORIGINS == ["*"] else True,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )

@@ -4,21 +4,14 @@ import { getBackendBaseUrl } from '../config/apiBaseUrl';
 
 const API_URL = getBackendBaseUrl();
 export const AUTH_UNAUTHORIZED_EVENT = 'elios:auth-unauthorized';
+axios.defaults.withCredentials = true;
 
 const api = axios.create({
   baseURL: `${API_URL}/api`,
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json'
   }
-});
-
-// Add auth token to requests
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('elios_token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
 });
 
 // Handle auth errors
@@ -26,8 +19,6 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('elios_token');
-      localStorage.removeItem('elios_user');
       window.dispatchEvent(new CustomEvent(AUTH_UNAUTHORIZED_EVENT));
       window.location.href = '/login';
     }
@@ -38,6 +29,7 @@ api.interceptors.response.use(
 // Auth API
 export const authAPI = {
   login: (email, password) => api.post('/auth/login', { email, password }),
+  logout: () => api.post('/auth/logout'),
   register: (data) => api.post('/auth/register', data),
   getMe: () => api.get('/auth/me'),
   changePassword: (data) => api.post('/auth/change-password', data),
