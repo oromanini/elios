@@ -56,3 +56,4 @@ Serviços:
 ## Segurança
 
 Consulte `SECURITY_REVIEW.md` para prioridades e plano de mitigação.
+
