@@ -1,49 +1,35 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { authAPI, AUTH_UNAUTHORIZED_EVENT } from '../services/api';
 
 const AuthContext = createContext(null);
 
-const AUTH_TOKEN_KEY = 'elios_token';
-const AUTH_USER_KEY = 'elios_user';
-
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(localStorage.getItem(AUTH_TOKEN_KEY));
   const [loading, setLoading] = useState(true);
 
   const clearAuthState = () => {
-    localStorage.removeItem(AUTH_TOKEN_KEY);
-    localStorage.removeItem(AUTH_USER_KEY);
-    setToken(null);
     setUser(null);
   };
 
+  const checkAuth = useCallback(async () => {
+    try {
+      const response = await authAPI.getMe();
+      setUser(response.data);
+      return response.data;
+    } catch (error) {
+      clearAuthState();
+      return null;
+    }
+  }, []);
+
   useEffect(() => {
     const initAuth = async () => {
-      const savedToken = localStorage.getItem(AUTH_TOKEN_KEY);
-      const savedUser = localStorage.getItem(AUTH_USER_KEY);
-      if (savedToken) {
-        try {
-          const response = await authAPI.getMe();
-          localStorage.setItem(AUTH_USER_KEY, JSON.stringify(response.data));
-          setUser(response.data);
-          setToken(savedToken);
-        } catch (error) {
-          clearAuthState();
-        }
-      } else if (savedUser) {
-        try {
-          setUser(JSON.parse(savedUser));
-        } catch (error) {
-          localStorage.removeItem(AUTH_USER_KEY);
-          setUser(null);
-        }
-      }
+      await checkAuth();
       setLoading(false);
     };
 
     initAuth();
-  }, []);
+  }, [checkAuth]);
 
   useEffect(() => {
     const handleUnauthorized = () => {
@@ -58,16 +44,17 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (email, password) => {
     const response = await authAPI.login(email, password);
-    
-    const { token: newToken, user: userData } = response.data;
-    localStorage.setItem(AUTH_TOKEN_KEY, newToken);
-    localStorage.setItem(AUTH_USER_KEY, JSON.stringify(userData));
-    setToken(newToken);
+    const { user: userData } = response.data;
     setUser(userData);
     return userData;
   };
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await authAPI.logout();
+    } catch (error) {
+      // noop: local client state will still be cleaned up
+    }
     clearAuthState();
   };
 
@@ -77,12 +64,12 @@ export const AuthProvider = ({ children }) => {
 
   const value = {
     user,
-    token,
     loading,
     login,
     logout,
+    checkAuth,
     isAdmin,
-    isAuthenticated: !!token && !!user
+    isAuthenticated: !!user
   };
 
   return (

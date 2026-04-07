@@ -24,9 +24,7 @@ import {
   Save,
   Loader2
 } from 'lucide-react';
-import axios from 'axios';
-
-const API_URL = process.env.REACT_APP_BACKEND_URL;
+import api from '../services/api';
 
 const CATEGORIES = [
   { id: 'comportamento', name: 'Comportamento', icon: MessageSquare },
@@ -70,10 +68,7 @@ const AdminEliosPage = () => {
   const loadSystemPrompt = async () => {
     setPromptLoading(true);
     try {
-      const token = localStorage.getItem('elios_token');
-      const response = await axios.get(`${API_URL}/api/admin/ai/prompt`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await api.get('/admin/ai/prompt');
       setSystemPrompt(response.data.prompt);
       setIsDefaultPrompt(response.data.is_default);
     } catch (error) {
@@ -86,11 +81,7 @@ const AdminEliosPage = () => {
   const handleSavePrompt = async () => {
     setSavingPrompt(true);
     try {
-      const token = localStorage.getItem('elios_token');
-      await axios.put(`${API_URL}/api/admin/ai/prompt`, 
-        { prompt: systemPrompt },
-        { headers: { Authorization: `Bearer ${token}` }}
-      );
+      await api.put('/admin/ai/prompt', { prompt: systemPrompt });
       toast.success('Prompt salvo com sucesso!');
       setIsDefaultPrompt(false);
     } catch (error) {
@@ -102,10 +93,7 @@ const AdminEliosPage = () => {
 
   const handleResetPrompt = async () => {
     try {
-      const token = localStorage.getItem('elios_token');
-      const response = await axios.post(`${API_URL}/api/admin/ai/prompt/reset`, {}, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await api.post('/admin/ai/prompt/reset', {});
       setSystemPrompt(response.data.prompt);
       setIsDefaultPrompt(true);
       toast.success('Prompt resetado para o padrão');
