@@ -35,6 +35,7 @@ const AdminMentoradosPage = () => {
   });
   const [goalDrafts, setGoalDrafts] = useState({});
   const [savingGoals, setSavingGoals] = useState({});
+  const [selectedUserId, setSelectedUserId] = useState('');
 
   const loadResponses = async (filterValues = filters) => {
     setLoading(true);
@@ -43,7 +44,13 @@ const AdminMentoradosPage = () => {
         Object.entries(filterValues).filter(([, value]) => value && String(value).trim() !== '')
       );
       const response = await adminAPI.getUsersFormResponses(params);
-      setResponses(response.data || []);
+      const loadedResponses = response.data || [];
+      setResponses(loadedResponses);
+      setSelectedUserId((prevSelected) => {
+        if (!loadedResponses.length) return '';
+        const hasPreviousSelection = loadedResponses.some((item) => String(item.user_id) === prevSelected);
+        return hasPreviousSelection ? prevSelected : String(loadedResponses[0].user_id);
+      });
     } catch (error) {
       toast.error('Erro ao carregar respostas dos mentorados');
     } finally {
@@ -59,6 +66,10 @@ const AdminMentoradosPage = () => {
   const completedFormsCount = useMemo(
     () => responses.filter((item) => item.form_completed).length,
     [responses]
+  );
+  const selectedUser = useMemo(
+    () => responses.find((item) => String(item.user_id) === selectedUserId) || null,
+    [responses, selectedUserId]
   );
 
   const handleFilterChange = (field, value) => {
@@ -221,22 +232,45 @@ const AdminMentoradosPage = () => {
               </CardContent>
             </Card>
           ) : (
-            responses.map((user) => (
-              <Card key={user.user_id} className="glass-card border-white/10">
+            <>
+              <Card className="glass-card border-white/10">
                 <CardHeader>
-                  <CardTitle className="text-white text-base md:text-lg">
-                    {user.full_name}
-                  </CardTitle>
-                  <p className="text-sm text-slate-400">
-                    {user.email} • Cadastro: {new Date(user.created_at).toLocaleDateString('pt-BR')}
-                  </p>
+                  <CardTitle className="text-white text-base md:text-lg">Selecionar mentorado</CardTitle>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="space-y-2">
+                  <p className="text-sm text-slate-400">
+                    Escolha o nome do usuário para visualizar as respostas do formulário e as metas.
+                  </p>
+                  <select
+                    value={selectedUserId}
+                    onChange={(e) => setSelectedUserId(e.target.value)}
+                    className="h-10 w-full rounded-md border border-slate-700 bg-slate-900/50 px-3 text-sm text-white"
+                  >
+                    {responses.map((user) => (
+                      <option key={user.user_id} value={String(user.user_id)}>
+                        {user.full_name} ({user.email})
+                      </option>
+                    ))}
+                  </select>
+                </CardContent>
+              </Card>
+
+              {selectedUser ? (
+                <Card key={selectedUser.user_id} className="glass-card border-white/10">
+                  <CardHeader>
+                    <CardTitle className="text-white text-base md:text-lg">
+                      {selectedUser.full_name}
+                    </CardTitle>
+                    <p className="text-sm text-slate-400">
+                      {selectedUser.email} • Cadastro: {new Date(selectedUser.created_at).toLocaleDateString('pt-BR')}
+                    </p>
+                  </CardHeader>
+                  <CardContent>
                   <Accordion type="single" collapsible className="space-y-3">
                     {PILLARS_WITH_META_MAGNUS.map((pillar) => (
                       <AccordionItem
-                        key={`${user.user_id}-${pillar}`}
-                        value={`${user.user_id}-${pillar}`}
+                        key={`${selectedUser.user_id}-${pillar}`}
+                        value={`${selectedUser.user_id}-${pillar}`}
                         className="rounded-lg border border-white/10 bg-slate-900/30 px-3"
                       >
                         <AccordionTrigger className="text-xs uppercase tracking-wide text-primary font-semibold hover:no-underline">
@@ -246,7 +280,7 @@ const AdminMentoradosPage = () => {
                           <div>
                             <p className="text-[11px] uppercase tracking-wide text-slate-400 mb-2">Resposta</p>
                             <p className="text-sm text-slate-200 whitespace-pre-wrap">
-                              {user.responses_by_pillar?.[pillar] || 'Sem resposta enviada.'}
+                              {selectedUser.responses_by_pillar?.[pillar] || 'Sem resposta enviada.'}
                             </p>
                           </div>
 
@@ -255,10 +289,10 @@ const AdminMentoradosPage = () => {
                               <Target size={14} className="text-primary" /> Metas do usuário
                             </p>
 
-                            {(user.goals_by_pillar?.[pillar] || []).length === 0 ? (
+                            {(selectedUser.goals_by_pillar?.[pillar] || []).length === 0 ? (
                               <p className="text-sm text-slate-400">Nenhuma meta cadastrada neste pilar.</p>
                             ) : (
-                              user.goals_by_pillar[pillar].map((goal) => (
+                              selectedUser.goals_by_pillar[pillar].map((goal) => (
                                 <div key={goal.id} className="rounded-md border border-white/10 bg-black/20 p-3 space-y-2">
                                   <Input
                                     value={goalDrafts[goal.id]?.title ?? goal.title}
@@ -289,7 +323,7 @@ const AdminMentoradosPage = () => {
                                     </select>
                                   </div>
                                   <Button
-                                    onClick={() => handleSaveGoal(user.user_id, goal)}
+                                    onClick={() => handleSaveGoal(selectedUser.user_id, goal)}
                                     disabled={savingGoals[goal.id]}
                                     className="bg-primary hover:bg-primary/90 text-white"
                                   >
@@ -304,9 +338,10 @@ const AdminMentoradosPage = () => {
                       </AccordionItem>
                     ))}
                   </Accordion>
-                </CardContent>
-              </Card>
-            ))
+                  </CardContent>
+                </Card>
+              ) : null}
+            </>
           )}
         </div>
       </div>
