@@ -40,7 +40,9 @@ export const authAPI = {
   login: (email, password) => api.post('/auth/login', { email, password }),
   register: (data) => api.post('/auth/register', data),
   getMe: () => api.get('/auth/me'),
-  changePassword: (data) => api.post('/auth/change-password', data)
+  changePassword: (data) => api.post('/auth/change-password', data),
+  forgotPassword: (email) => api.post('/auth/forgot-password', { email }),
+  resetPassword: (token, new_password) => api.post('/auth/reset-password', { token, new_password })
 };
 
 // Questions API

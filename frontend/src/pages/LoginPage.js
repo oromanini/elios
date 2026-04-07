@@ -112,6 +112,15 @@ const LoginPage = () => {
                   </>
                 )}
               </Button>
+
+              <button
+                type="button"
+                onClick={() => navigate('/esqueci-senha')}
+                className="w-full text-sm text-neutral-400 hover:text-white transition-colors"
+                data-testid="forgot-password-link"
+              >
+                Esqueci minha senha
+              </button>
             </form>
 
             <div className="mt-6 pt-6 border-t border-white/10 text-center">
