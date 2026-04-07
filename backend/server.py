@@ -154,6 +154,7 @@ class AdminUserFormResponses(BaseModel):
     created_at: str
     form_completed: bool = False
     responses_by_pillar: Dict[str, str]
+    goals_by_pillar: Dict[str, List[Dict[str, Any]]] = Field(default_factory=dict)
 
 class QuestionCreate(BaseModel):
     pillar: str
@@ -1178,6 +1179,19 @@ async def list_users_form_responses(
         {"_id": 0, "id": 1, "full_name": 1, "email": 1, "created_at": 1, "form_completed": 1}
     ).sort("created_at", -1).to_list(1000)
 
+    user_ids = [user["id"] for user in users]
+    goals_by_user: Dict[str, Dict[str, List[Dict[str, Any]]]] = {}
+    if user_ids:
+        goal_docs = await db.goals.find(
+            {"user_id": {"$in": user_ids}, "is_deleted": False},
+            {"_id": 0}
+        ).sort("created_at", -1).to_list(5000)
+
+        for goal in goal_docs:
+            user_goal_map = goals_by_user.setdefault(goal["user_id"], {})
+            pillar_goal_list = user_goal_map.setdefault(goal["pillar"], [])
+            pillar_goal_list.append(goal)
+
     question_docs = await db.questions.find({}, {"_id": 0, "id": 1, "pillar": 1}).to_list(200)
     question_to_pillar = {question["id"]: question.get("pillar") for question in question_docs}
 
@@ -1201,7 +1215,8 @@ async def list_users_form_responses(
                 email=user["email"],
                 created_at=user["created_at"],
                 form_completed=user.get("form_completed", False),
-                responses_by_pillar=responses_by_pillar
+                responses_by_pillar=responses_by_pillar,
+                goals_by_pillar=goals_by_user.get(user["id"], {})
             )
         )
 
@@ -1229,6 +1244,43 @@ async def update_user(user_id: str, update: UserUpdate, admin: dict = Depends(ge
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
     
     return {"message": "Usuário atualizado com sucesso"}
+
+@api_router.put("/admin/users/{user_id}/goals/{goal_id}", response_model=GoalResponse)
+async def update_user_goal_by_admin(
+    user_id: str,
+    goal_id: str,
+    update: GoalUpdate,
+    admin: dict = Depends(get_admin_user)
+):
+    """Update a specific default user's goal (admin only)."""
+    goal = await db.goals.find_one(
+        {"id": goal_id, "user_id": user_id, "is_deleted": False},
+        {"_id": 0}
+    )
+
+    if not goal:
+        raise HTTPException(status_code=404, detail="Meta não encontrada")
+
+    update_dict = {k: v for k, v in update.model_dump().items() if v is not None}
+    if not update_dict:
+        raise HTTPException(status_code=400, detail="Nenhum campo para atualizar")
+
+    history_doc = {
+        "id": str(uuid.uuid4()),
+        "goal_id": goal_id,
+        "user_id": user_id,
+        "changes": update_dict,
+        "old_values": {k: goal.get(k) for k in update_dict.keys()},
+        "changed_at": datetime.now(timezone.utc).isoformat(),
+        "changed_by": admin["id"],
+    }
+    await db.goal_history.insert_one(history_doc)
+
+    update_dict["updated_at"] = datetime.now(timezone.utc).isoformat()
+    await db.goals.update_one({"id": goal_id}, {"$set": update_dict})
+
+    updated_goal = await db.goals.find_one({"id": goal_id, "user_id": user_id}, {"_id": 0})
+    return GoalResponse(**updated_goal)
 
 @api_router.post("/admin/users/{user_id}/profile-photo")
 async def update_user_profile_photo(
