@@ -86,6 +86,7 @@ export const adminAPI = {
   getUsers: () => api.get('/admin/users'),
   createUser: (data) => api.post('/admin/users', data),
   getUsersFormResponses: (params = {}) => api.get('/admin/users/form-responses', { params }),
+  updateUserGoal: (userId, goalId, data) => api.put(`/admin/users/${userId}/goals/${goalId}`, data),
   updateUser: (id, data) => api.put(`/admin/users/${id}`, data),
   uploadUserPhoto: (id, formData) => api.post(`/admin/users/${id}/profile-photo`, formData, {
     headers: {

@@ -3,9 +3,11 @@ import Layout from '../components/Layout';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
+import { Textarea } from '../components/ui/textarea';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '../components/ui/accordion';
 import { adminAPI } from '../services/api';
 import { toast } from 'sonner';
-import { CalendarDays, Filter, Search, Users } from 'lucide-react';
+import { CalendarDays, Filter, Save, Search, Target, Users } from 'lucide-react';
 
 const PILLARS_WITH_META_MAGNUS = [
   'ESPIRITUALIDADE',
@@ -31,6 +33,8 @@ const AdminMentoradosPage = () => {
     registered_from: '',
     registered_to: ''
   });
+  const [goalDrafts, setGoalDrafts] = useState({});
+  const [savingGoals, setSavingGoals] = useState({});
 
   const loadResponses = async (filterValues = filters) => {
     setLoading(true);
@@ -74,6 +78,45 @@ const AdminMentoradosPage = () => {
     };
     setFilters(resetFilters);
     loadResponses(resetFilters);
+  };
+
+  const formatDateForInput = (value) => {
+    if (!value) return '';
+    return value.slice(0, 10);
+  };
+
+  const handleGoalFieldChange = (goalId, field, value) => {
+    setGoalDrafts((prev) => ({
+      ...prev,
+      [goalId]: {
+        ...(prev[goalId] || {}),
+        [field]: value
+      }
+    }));
+  };
+
+  const handleSaveGoal = async (userId, goal) => {
+    const draft = goalDrafts[goal.id];
+    if (!draft || Object.keys(draft).length === 0) {
+      toast.info('Nenhuma alteração para salvar nesta meta');
+      return;
+    }
+
+    setSavingGoals((prev) => ({ ...prev, [goal.id]: true }));
+    try {
+      await adminAPI.updateUserGoal(userId, goal.id, draft);
+      toast.success('Meta atualizada com sucesso');
+      setGoalDrafts((prev) => {
+        const next = { ...prev };
+        delete next[goal.id];
+        return next;
+      });
+      loadResponses(filters);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Erro ao atualizar meta');
+    } finally {
+      setSavingGoals((prev) => ({ ...prev, [goal.id]: false }));
+    }
   };
 
   return (
@@ -189,18 +232,78 @@ const AdminMentoradosPage = () => {
                   </p>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                  <Accordion type="single" collapsible className="space-y-3">
                     {PILLARS_WITH_META_MAGNUS.map((pillar) => (
-                      <div key={`${user.user_id}-${pillar}`} className="rounded-lg border border-white/10 bg-slate-900/30 p-3">
-                        <p className="text-xs uppercase tracking-wide text-primary font-semibold mb-2">
+                      <AccordionItem
+                        key={`${user.user_id}-${pillar}`}
+                        value={`${user.user_id}-${pillar}`}
+                        className="rounded-lg border border-white/10 bg-slate-900/30 px-3"
+                      >
+                        <AccordionTrigger className="text-xs uppercase tracking-wide text-primary font-semibold hover:no-underline">
                           {pillar}
-                        </p>
-                        <p className="text-sm text-slate-200 whitespace-pre-wrap">
-                          {user.responses_by_pillar?.[pillar] || 'Sem resposta enviada.'}
-                        </p>
-                      </div>
+                        </AccordionTrigger>
+                        <AccordionContent className="space-y-4 pb-4">
+                          <div>
+                            <p className="text-[11px] uppercase tracking-wide text-slate-400 mb-2">Resposta</p>
+                            <p className="text-sm text-slate-200 whitespace-pre-wrap">
+                              {user.responses_by_pillar?.[pillar] || 'Sem resposta enviada.'}
+                            </p>
+                          </div>
+
+                          <div className="space-y-3">
+                            <p className="text-[11px] uppercase tracking-wide text-slate-400 flex items-center gap-2">
+                              <Target size={14} className="text-primary" /> Metas do usuário
+                            </p>
+
+                            {(user.goals_by_pillar?.[pillar] || []).length === 0 ? (
+                              <p className="text-sm text-slate-400">Nenhuma meta cadastrada neste pilar.</p>
+                            ) : (
+                              user.goals_by_pillar[pillar].map((goal) => (
+                                <div key={goal.id} className="rounded-md border border-white/10 bg-black/20 p-3 space-y-2">
+                                  <Input
+                                    value={goalDrafts[goal.id]?.title ?? goal.title}
+                                    onChange={(e) => handleGoalFieldChange(goal.id, 'title', e.target.value)}
+                                    className="bg-slate-900/50 border-slate-700 text-white"
+                                    placeholder="Título da meta"
+                                  />
+                                  <Textarea
+                                    value={goalDrafts[goal.id]?.description ?? goal.description}
+                                    onChange={(e) => handleGoalFieldChange(goal.id, 'description', e.target.value)}
+                                    className="bg-slate-900/50 border-slate-700 text-white min-h-[96px]"
+                                    placeholder="Descrição da meta"
+                                  />
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                    <Input
+                                      type="date"
+                                      value={goalDrafts[goal.id]?.target_date ?? formatDateForInput(goal.target_date)}
+                                      onChange={(e) => handleGoalFieldChange(goal.id, 'target_date', e.target.value)}
+                                      className="bg-slate-900/50 border-slate-700 text-white"
+                                    />
+                                    <select
+                                      value={goalDrafts[goal.id]?.status ?? goal.status}
+                                      onChange={(e) => handleGoalFieldChange(goal.id, 'status', e.target.value)}
+                                      className="h-10 rounded-md border border-slate-700 bg-slate-900/50 px-3 text-sm text-white"
+                                    >
+                                      <option value="active">Ativa</option>
+                                      <option value="completed">Concluída</option>
+                                    </select>
+                                  </div>
+                                  <Button
+                                    onClick={() => handleSaveGoal(user.user_id, goal)}
+                                    disabled={savingGoals[goal.id]}
+                                    className="bg-primary hover:bg-primary/90 text-white"
+                                  >
+                                    <Save size={15} className="mr-2" />
+                                    {savingGoals[goal.id] ? 'Salvando...' : 'Salvar meta'}
+                                  </Button>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </AccordionContent>
+                      </AccordionItem>
                     ))}
-                  </div>
+                  </Accordion>
                 </CardContent>
               </Card>
             ))
