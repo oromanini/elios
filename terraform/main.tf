@@ -7,6 +7,17 @@ locals {
   frontend_image = var.frontend_image != "" ? var.frontend_image : "${var.region}-docker.pkg.dev/${local.project_id}/${var.artifact_registry_repository_id}/frontend:latest"
 }
 
+resource "google_storage_bucket" "terraform_state" {
+  name          = "elios-terraform-state-${var.project_id}"
+  location      = var.region
+  force_destroy = false
+  storage_class = "STANDARD"
+
+  versioning {
+    enabled = true
+  }
+}
+
 # --- RECURSO: ARTIFACT REGISTRY ---
 resource "google_artifact_registry_repository" "docker" {
   location      = var.region
