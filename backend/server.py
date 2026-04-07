@@ -461,30 +461,32 @@ def send_welcome_email(to_email: str, full_name: str, password: str):
         <html>
         <head>
             <style>
-                body {{ font-family: Arial, sans-serif; background-color: #0d0d0d; color: #f8fafc; }}
+                body {{ font-family: Arial, sans-serif; background-color: #0d0d0d; color: #e5e7eb; }}
                 .container {{ max-width: 600px; margin: 0 auto; padding: 40px; background-color: #141414; border-radius: 10px; }}
                 .header {{ text-align: center; margin-bottom: 30px; }}
                 .logo {{ font-size: 32px; font-weight: bold; color: #ffffff; }}
+                .subtitle {{ color: #cbd5e1; }}
+                .body-text {{ color: #e5e7eb; }}
                 .credentials {{ background-color: #1a1a1a; padding: 20px; border-radius: 8px; margin: 20px 0; }}
                 .field {{ margin: 10px 0; }}
-                .label {{ color: #888888; font-size: 12px; text-transform: uppercase; }}
+                .label {{ color: #cbd5e1; font-size: 12px; text-transform: uppercase; }}
                 .value {{ color: #f8fafc; font-size: 18px; font-weight: bold; }}
-                .warning {{ background-color: #f59e0b20; border-left: 4px solid #f59e0b; padding: 15px; margin-top: 20px; }}
-                .footer {{ text-align: center; margin-top: 30px; color: #666666; font-size: 12px; }}
+                .warning {{ background-color: #f59e0b20; border-left: 4px solid #f59e0b; color: #fde68a; padding: 15px; margin-top: 20px; }}
+                .footer {{ text-align: center; margin-top: 30px; color: #94a3b8; font-size: 12px; }}
             </style>
         </head>
         <body>
             <div class="container">
                 <div class="header">
                     <div class="logo">ELIOS</div>
-                    <p>Assistente de Performance da Elite</p>
+                    <p class="subtitle">Assistente de Performance da Elite</p>
                 </div>
                 
-                <p>Olá, <strong>{full_name}</strong>!</p>
+                <p class="body-text">Olá, <strong>{full_name}</strong>!</p>
                 
-                <p>Parabéns por completar seu cadastro no programa Elite da HUTOO EDUCAÇÃO!</p>
+                <p class="body-text">Parabéns por completar seu cadastro no programa Elite da HUTOO EDUCAÇÃO!</p>
                 
-                <p>Suas credenciais de acesso ao sistema ELIOS são:</p>
+                <p class="body-text">Suas credenciais de acesso ao sistema ELIOS são:</p>
                 
                 <div class="credentials">
                     <div class="field">
@@ -503,7 +505,7 @@ def send_welcome_email(to_email: str, full_name: str, password: str):
                     Você receberá uma notificação quando sua conta estiver ativa.
                 </div>
                 
-                <p>Recomendamos que você altere sua senha após o primeiro acesso.</p>
+                <p class="body-text">Recomendamos que você altere sua senha após o primeiro acesso.</p>
                 
                 <div class="footer">
                     <p>HUTOO EDUCAÇÃO - Programa Elite</p>
