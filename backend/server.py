@@ -8,6 +8,7 @@ import logging
 from pathlib import Path
 from io import BytesIO
 import json
+import base64
 from pydantic import BaseModel, Field, ConfigDict, EmailStr
 from typing import List, Optional, Dict, Any
 import uuid
@@ -379,10 +380,11 @@ async def upload_profile_picture(user_id: str, file: UploadFile) -> str:
 
     if ENV == "production":
         if not all([R2_ACCESS_KEY, R2_SECRET_KEY, R2_ENDPOINT, R2_BUCKET_NAME]):
-            raise HTTPException(
-                status_code=500,
-                detail="R2_ACCESS_KEY, R2_SECRET_KEY, R2_ENDPOINT e R2_BUCKET_NAME são obrigatórios em produção.",
+            logger.warning(
+                "R2 não configurado em produção; salvando foto de perfil como data URL no MongoDB."
             )
+            encoded = base64.b64encode(optimized_bytes.getvalue()).decode("utf-8")
+            return f"data:image/jpeg;base64,{encoded}"
 
         try:
             import boto3
@@ -391,20 +393,24 @@ async def upload_profile_picture(user_id: str, file: UploadFile) -> str:
 
         object_path = f"profile_photos/{filename}"
 
-        s3_client = boto3.client(
-            "s3",
-            endpoint_url=R2_ENDPOINT.rstrip("/"),
-            aws_access_key_id=R2_ACCESS_KEY,
-            aws_secret_access_key=R2_SECRET_KEY,
-            region_name="auto",
-        )
+        try:
+            s3_client = boto3.client(
+                "s3",
+                endpoint_url=R2_ENDPOINT.rstrip("/"),
+                aws_access_key_id=R2_ACCESS_KEY,
+                aws_secret_access_key=R2_SECRET_KEY,
+                region_name="auto",
+            )
 
-        s3_client.upload_fileobj(
-            optimized_bytes,
-            R2_BUCKET_NAME,
-            object_path,
-            ExtraArgs={"ContentType": "image/jpeg"},
-        )
+            s3_client.upload_fileobj(
+                optimized_bytes,
+                R2_BUCKET_NAME,
+                object_path,
+                ExtraArgs={"ContentType": "image/jpeg"},
+            )
+        except Exception as exc:
+            logger.exception("Falha no upload da foto de perfil para R2")
+            raise HTTPException(status_code=502, detail="Falha ao enviar foto de perfil para o storage.") from exc
 
         if R2_PUBLIC_BASE_URL:
             return f"{R2_PUBLIC_BASE_URL.rstrip('/')}/{object_path}"
