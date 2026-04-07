@@ -1,6 +1,11 @@
 terraform {
   required_version = ">= 1.5.7"
 
+  backend "gcs" {
+    bucket = "elios-terraform-state-elios-492418"
+    prefix = "terraform/state"
+  }
+
   required_providers {
     google = {
       source  = "hashicorp/google"

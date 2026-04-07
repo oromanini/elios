@@ -92,3 +92,10 @@ frontend/node_modules/.cache/default-development/7.pack
 *.env
 *.env.*
 .terraform/
+
+# Terraform state files
+*.tfstate
+*.tfstate.backup
+*.tfstate.lock.info
+.terraform/
+.terraform.lock.hcl
