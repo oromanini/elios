@@ -4,6 +4,10 @@ on:
   push:
     branches: ["main"]
 
+concurrency:
+  group: deploy-elios-main
+  cancel-in-progress: true
+
 env:
   PROJECT_ID: elios-492418
   REGION: us-central1
