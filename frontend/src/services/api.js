@@ -35,6 +35,7 @@ export const authAPI = {
   logout: () => api.post('/auth/logout'),
   register: (data) => api.post('/auth/register', data),
   getMe: () => api.get('/auth/me'),
+  acceptPrivacyPolicy: (version) => api.post('/auth/privacy-policy/accept', { version }),
   changePassword: (data) => api.post('/auth/change-password', data),
   forgotPassword: (email) => api.post('/auth/forgot-password', { email }),
   resetPassword: (token, new_password) => api.post('/auth/reset-password', { token, new_password })

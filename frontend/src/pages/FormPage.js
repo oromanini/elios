@@ -10,6 +10,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../co
 import { Progress } from '../components/ui/progress';
 import { toast } from 'sonner';
 import { questionsAPI, formAPI, aiAPI } from '../services/api';
+import PrivacyPolicyDialog from '../components/PrivacyPolicyDialog';
+import { PRIVACY_POLICY_VERSION } from '../config/privacyPolicy';
 import {
   ArrowRight, 
   ArrowLeft, 
@@ -162,6 +164,9 @@ const FormPage = () => {
   const [aiAnalysis, setAiAnalysis] = useState(null);
   const [questionAnalyses, setQuestionAnalyses] = useState({});
   const profilePhotoInputRef = useRef(null);
+  const [privacyOpen, setPrivacyOpen] = useState(false);
+  const [hasAcceptedPolicy, setHasAcceptedPolicy] = useState(false);
+  const [privacyAcceptedAt, setPrivacyAcceptedAt] = useState(null);
   
   // Form data
   const [fullName, setFullName] = useState('');
@@ -281,6 +286,12 @@ const FormPage = () => {
   };
 
   const handleSubmit = async () => {
+    if (!hasAcceptedPolicy) {
+      toast.error('Você precisa aceitar a Política de Privacidade antes de enviar.');
+      setPrivacyOpen(true);
+      return;
+    }
+
     setSubmitting(true);
     try {
       const formattedResponses = Object.entries(responses).map(([questionId, answer]) => ({
@@ -292,6 +303,8 @@ const FormPage = () => {
       formData.append('full_name', fullName);
       formData.append('email', email);
       formData.append('date_of_birth', birthDate);
+      formData.append('privacy_policy_version', PRIVACY_POLICY_VERSION);
+      formData.append('privacy_policy_accepted_at', privacyAcceptedAt || new Date().toISOString());
       formData.append('responses', JSON.stringify(formattedResponses));
       const detectedGoals = Object.entries(questionAnalyses).flatMap(([questionId, analysis]) =>
         (analysis.detected_goals || []).map((goal) => ({
@@ -607,6 +620,13 @@ const FormPage = () => {
 
   const isLastStep = currentStep === totalSteps - 1;
 
+  const handleAcceptPolicy = () => {
+    setHasAcceptedPolicy(true);
+    setPrivacyAcceptedAt(new Date().toISOString());
+    setPrivacyOpen(false);
+    toast.success('Política de Privacidade aceita.');
+  };
+
   return (
     <div className="min-h-screen login-bg py-8 px-4">
       <div className="grid-overlay" />
@@ -663,24 +683,40 @@ const FormPage = () => {
               </Button>
 
               {isLastStep ? (
-                <Button
-                  onClick={handleSubmit}
-                  disabled={submitting}
-                  className="btn-primary"
-                  data-testid="form-submit"
-                >
-                  {submitting ? (
-                    <>
-                      <Loader2 className="mr-2 animate-spin" size={18} />
-                      Enviando...
-                    </>
-                  ) : (
-                    <>
-                      <Send className="mr-2" size={18} />
-                      Enviar Formulário
-                    </>
+                <div className="flex flex-col items-end gap-3">
+                  {!hasAcceptedPolicy && (
+                    <p className="text-xs text-slate-400 text-right max-w-sm">
+                      <>
+                        Ao enviar o formulário, você precisa aceitar a{' '}
+                        <button
+                          type="button"
+                          onClick={() => setPrivacyOpen(true)}
+                          className="underline hover:text-white"
+                        >
+                          Política de Privacidade
+                        </button>.
+                      </>
+                    </p>
                   )}
-                </Button>
+                  <Button
+                    onClick={handleSubmit}
+                    disabled={submitting || !hasAcceptedPolicy}
+                    className="btn-primary"
+                    data-testid="form-submit"
+                  >
+                    {submitting ? (
+                      <>
+                        <Loader2 className="mr-2 animate-spin" size={18} />
+                        Enviando...
+                      </>
+                    ) : (
+                      <>
+                        <Send className="mr-2" size={18} />
+                        Enviar Formulário
+                      </>
+                    )}
+                  </Button>
+                </div>
               ) : (
                 <Button
                   onClick={handleNext}
@@ -696,6 +732,12 @@ const FormPage = () => {
           </CardContent>
         </Card>
       </div>
+
+      <PrivacyPolicyDialog
+        open={privacyOpen}
+        onOpenChange={setPrivacyOpen}
+        onAccept={handleAcceptPolicy}
+      />
     </div>
   );
 };
