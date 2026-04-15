@@ -23,7 +23,6 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       window.dispatchEvent(new CustomEvent(AUTH_UNAUTHORIZED_EVENT));
-      window.location.href = '/login';
     }
     return Promise.reject(error);
   }
