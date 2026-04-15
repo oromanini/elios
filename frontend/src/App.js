@@ -1,7 +1,10 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { Toaster } from './components/ui/sonner';
+import { Toaster, toast } from './components/ui/sonner';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { authAPI } from './services/api';
+import PrivacyPolicyDialog from './components/PrivacyPolicyDialog';
+import { PRIVACY_POLICY_VERSION } from './config/privacyPolicy';
 import './App.css';
 
 // Pages
@@ -17,10 +20,18 @@ import AdminQuestionsPage from './pages/AdminQuestionsPage';
 import AdminEliosPage from './pages/AdminEliosPage';
 import AdminMentoradosPage from './pages/AdminMentoradosPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import PrivacyPolicyPage from './pages/PrivacyPolicyPage';
 
 // Protected Route Component
 const ProtectedRoute = ({ children, adminOnly = false }) => {
-  const { isAuthenticated, loading, isAdmin } = useAuth();
+  const { isAuthenticated, loading, isAdmin, user, checkAuth } = useAuth();
+  const [submittingAcceptance, setSubmittingAcceptance] = useState(false);
+  const [privacyOpen, setPrivacyOpen] = useState(true);
+
+  const hasAcceptedCurrentPrivacyVersion = useMemo(
+    () => user?.privacy_policy_accepted_version === PRIVACY_POLICY_VERSION,
+    [user]
+  );
 
   if (loading) {
     return (
@@ -36,6 +47,45 @@ const ProtectedRoute = ({ children, adminOnly = false }) => {
 
   if (adminOnly && !isAdmin()) {
     return <Navigate to="/dashboard" replace />;
+  }
+
+  const handleAcceptPrivacyPolicy = async () => {
+    setSubmittingAcceptance(true);
+    try {
+      await authAPI.acceptPrivacyPolicy(PRIVACY_POLICY_VERSION);
+      await checkAuth();
+      toast.success('Política de Privacidade aceita.');
+      setPrivacyOpen(false);
+    } catch (error) {
+      const message = error.response?.data?.detail || 'Não foi possível registrar o aceite da política.';
+      toast.error(message);
+      setPrivacyOpen(true);
+    } finally {
+      setSubmittingAcceptance(false);
+    }
+  };
+
+  if (!hasAcceptedCurrentPrivacyVersion) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-6">
+        <div className="text-center text-slate-300 max-w-md">
+          <p className="mb-4">Para continuar, você precisa aceitar a Política de Privacidade.</p>
+          <button
+            type="button"
+            className="underline hover:text-white"
+            onClick={() => setPrivacyOpen(true)}
+            disabled={submittingAcceptance}
+          >
+            Abrir política
+          </button>
+        </div>
+        <PrivacyPolicyDialog
+          open={privacyOpen}
+          onOpenChange={setPrivacyOpen}
+          onAccept={handleAcceptPrivacyPolicy}
+        />
+      </div>
+    );
   }
 
   return children;
@@ -80,6 +130,7 @@ function AppRoutes() {
           </PublicRoute>
         }
       />
+      <Route path="/politica-privacidade" element={<PrivacyPolicyPage />} />
       <Route path="/form" element={<FormPage />} />
       <Route path="/form/success" element={<FormSuccessPage />} />
 

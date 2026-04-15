@@ -63,6 +63,7 @@ SMTP_EMAIL = os.environ.get('SMTP_EMAIL', '')
 SMTP_PASSWORD = os.environ.get('SMTP_PASSWORD', '')
 FRONTEND_RESET_PASSWORD_URL = os.environ.get("FRONTEND_RESET_PASSWORD_URL", "")
 RESET_PASSWORD_TTL_MINUTES = int(os.environ.get("RESET_PASSWORD_TTL_MINUTES", "30"))
+PRIVACY_POLICY_CURRENT_VERSION = os.environ.get("PRIVACY_POLICY_CURRENT_VERSION", "2026-04-15")
 
 # Upload Configuration
 ENV = os.environ.get('ENV', 'development').lower()
@@ -141,6 +142,9 @@ class UserLogin(BaseModel):
     email: EmailStr
     password: str
 
+class PrivacyPolicyAcceptanceRequest(BaseModel):
+    version: str
+
 class UserResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str
@@ -152,6 +156,8 @@ class UserResponse(BaseModel):
     form_completed: bool = False
     elios_summary: Optional[str] = None
     profile_photo_url: Optional[str] = None
+    privacy_policy_accepted_version: Optional[str] = None
+    privacy_policy_accepted_at: Optional[str] = None
 
 class UserUpdate(BaseModel):
     full_name: Optional[str] = None
@@ -212,6 +218,8 @@ class FormSubmission(BaseModel):
     full_name: str
     email: EmailStr
     date_of_birth: Optional[str] = None
+    privacy_policy_version: str
+    privacy_policy_accepted_at: str
     profile_photo: Optional[UploadFile] = None
     responses: List[FormResponseCreate]
     detected_goals: List[FormDetectedGoal] = Field(default_factory=list)
@@ -222,6 +230,8 @@ class FormSubmission(BaseModel):
         full_name: str = Form(...),
         email: EmailStr = Form(...),
         date_of_birth: Optional[str] = Form(None),
+        privacy_policy_version: str = Form(...),
+        privacy_policy_accepted_at: str = Form(...),
         responses: str = Form(...),
         detected_goals: Optional[str] = Form(None),
         profile_photo: Optional[UploadFile] = File(None)
@@ -252,6 +262,8 @@ class FormSubmission(BaseModel):
             full_name=full_name,
             email=email,
             date_of_birth=date_of_birth,
+            privacy_policy_version=privacy_policy_version,
+            privacy_policy_accepted_at=privacy_policy_accepted_at,
             responses=response_items,
             detected_goals=parsed_detected_goals,
             profile_photo=profile_photo
@@ -511,6 +523,13 @@ def decode_token(token: str) -> dict:
         raise HTTPException(status_code=401, detail="Token expirado")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Token inválido")
+
+def extract_privacy_policy_fields(user: dict) -> Dict[str, Optional[str]]:
+    privacy_policy = user.get("privacy_policy") or {}
+    return {
+        "privacy_policy_accepted_version": privacy_policy.get("accepted_version"),
+        "privacy_policy_accepted_at": privacy_policy.get("accepted_at")
+    }
 
 async def get_current_user(request: Request):
     """Get the current authenticated user"""
@@ -1180,6 +1199,7 @@ async def register_user(user: UserCreate):
         "is_active": False,
         "form_completed": False,
         "elios_summary": None,
+        "privacy_policy": None,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     
@@ -1232,13 +1252,15 @@ async def login(credentials: UserLogin, request: Request, response: Response):
             "role": user["role"],
             "form_completed": user.get("form_completed", False),
             "elios_summary": user.get("elios_summary"),
-            "profile_photo_url": user.get("profile_photo_url")
+            "profile_photo_url": user.get("profile_photo_url"),
+            **extract_privacy_policy_fields(user)
         }
     }
 
 @api_router.get("/auth/me", response_model=UserResponse)
 async def get_me(user: dict = Depends(get_current_user)):
     """Get current user info"""
+    privacy_policy_fields = extract_privacy_policy_fields(user)
     return UserResponse(
         id=user["id"],
         full_name=user["full_name"],
@@ -1248,8 +1270,37 @@ async def get_me(user: dict = Depends(get_current_user)):
         created_at=user["created_at"],
         form_completed=user.get("form_completed", False),
         elios_summary=user.get("elios_summary"),
-        profile_photo_url=user.get("profile_photo_url")
+        profile_photo_url=user.get("profile_photo_url"),
+        **privacy_policy_fields
     )
+
+@api_router.post("/auth/privacy-policy/accept")
+async def accept_privacy_policy(payload: PrivacyPolicyAcceptanceRequest, request: Request, user: dict = Depends(get_current_user)):
+    """Persist current user's privacy policy acceptance on the server."""
+    if payload.version != PRIVACY_POLICY_CURRENT_VERSION:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Versão inválida. Versão vigente: {PRIVACY_POLICY_CURRENT_VERSION}."
+        )
+
+    accepted_at = datetime.now(timezone.utc).isoformat()
+    client_ip = request.client.host if request.client else "unknown"
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {
+            "privacy_policy": {
+                "accepted_version": payload.version,
+                "accepted_at": accepted_at,
+                "accepted_ip": client_ip,
+                "source": "authenticated_user"
+            }
+        }}
+    )
+
+    return {
+        "accepted_version": payload.version,
+        "accepted_at": accepted_at
+    }
 
 @api_router.post("/auth/logout")
 async def logout(response: Response):
@@ -1366,6 +1417,7 @@ async def create_user_by_admin(payload: AdminUserCreate, admin: dict = Depends(g
         "is_active": payload.is_active,
         "form_completed": False,
         "elios_summary": None,
+        "privacy_policy": None,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
 
@@ -1614,6 +1666,12 @@ async def delete_question(question_id: str, admin: dict = Depends(get_admin_user
 @api_router.post("/form/submit")
 async def submit_form(submission: FormSubmission = Depends(FormSubmission.as_form), background_tasks: BackgroundTasks = None):
     """Submit the complete form and create user"""
+    if submission.privacy_policy_version != PRIVACY_POLICY_CURRENT_VERSION:
+        raise HTTPException(
+            status_code=400,
+            detail=f"É necessário aceitar a versão vigente da política ({PRIVACY_POLICY_CURRENT_VERSION})."
+        )
+
     # Check if email already exists
     existing = await db.users.find_one({"email": submission.email})
     if existing:
@@ -1638,6 +1696,12 @@ async def submit_form(submission: FormSubmission = Depends(FormSubmission.as_for
         "form_completed": True,
         "elios_summary": None,
         "profile_photo_url": profile_photo_url,
+        "privacy_policy": {
+            "accepted_version": submission.privacy_policy_version,
+            "accepted_at": submission.privacy_policy_accepted_at,
+            "accepted_ip": None,
+            "source": "public_form"
+        },
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     
@@ -2058,6 +2122,7 @@ async def init_admin(setup_token: Optional[str] = None):
         "is_active": True,
         "form_completed": True,
         "elios_summary": None,
+        "privacy_policy": None,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     

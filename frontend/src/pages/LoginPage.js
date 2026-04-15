@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Logo from '../components/Logo';
 import { Button } from '../components/ui/button';
@@ -142,9 +142,13 @@ const LoginPage = () => {
 
         {/* Footer */}
         <p className="text-center text-neutral-600 text-sm mt-8">
-          HUTOO EDUCAÇÃO © {new Date().getFullYear()} - Programa Elite
+          HUTOO EDUCAÇÃO © {new Date().getFullYear()} - Programa Elite •{' '}
+          <Link to="/politica-privacidade" className="underline hover:text-neutral-400">
+            Política de Privacidade
+          </Link>
         </p>
       </div>
+
     </div>
   );
 };
