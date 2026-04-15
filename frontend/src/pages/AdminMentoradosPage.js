@@ -212,14 +212,14 @@ const AdminMentoradosPage = () => {
             <div className="flex flex-wrap gap-2">
               <Button
                 onClick={handleApplyFilters}
-                className="bg-primary/90 hover:bg-primary text-white border border-primary/70 shadow-sm"
+                className="border border-sky-500/50 bg-sky-700/80 text-white shadow-sm hover:bg-sky-600 disabled:border-slate-600 disabled:bg-slate-700 disabled:text-slate-300 disabled:opacity-100"
               >
                 Aplicar filtros
               </Button>
               <Button
                 variant="outline"
                 onClick={handleClearFilters}
-                className="border-slate-600 bg-slate-800/90 hover:bg-slate-700 text-slate-100"
+                className="border-slate-600 bg-slate-800 text-slate-100 hover:bg-slate-700"
               >
                 Limpar
               </Button>
