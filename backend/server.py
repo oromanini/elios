@@ -1762,7 +1762,10 @@ async def get_my_responses(user: dict = Depends(get_current_user)):
     # Enrich with question data
     enriched = []
     for resp in responses:
-        question = await db.questions.find_one({"id": resp["question_id"]}, {"_id": 0})
+        question_id = resp.get("question_id")
+        question = None
+        if question_id:
+            question = await db.questions.find_one({"id": question_id}, {"_id": 0})
         enriched.append({
             **resp,
             "question": question
@@ -2029,9 +2032,15 @@ async def get_dashboard_stats(user: dict = Depends(get_current_user)):
     
     pillar_data = {}
     for resp in responses:
-        question = await db.questions.find_one({"id": resp["question_id"]}, {"_id": 0})
+        question_id = resp.get("question_id")
+        if not question_id:
+            continue
+
+        question = await db.questions.find_one({"id": question_id}, {"_id": 0})
         if question:
-            pillar = question["pillar"]
+            pillar = question.get("pillar")
+            if not pillar:
+                continue
             if pillar not in pillar_data:
                 pillar_data[pillar] = {"filled": True, "goals_count": 0, "completed": 0}
     
