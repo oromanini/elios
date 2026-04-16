@@ -39,6 +39,12 @@ JWT_ALGORITHM = "HS256"
 JWT_EXP_HOURS = int(os.environ.get("JWT_EXP_HOURS", "12"))
 JWT_COOKIE_NAME = os.environ.get("JWT_COOKIE_NAME", "elios_token")
 JWT_COOKIE_MAX_AGE = JWT_EXP_HOURS * 3600
+JWT_COOKIE_SECURE = os.environ.get("JWT_COOKIE_SECURE", "true" if os.environ.get("ENV", "development").lower() == "production" else "false").lower() == "true"
+JWT_COOKIE_SAMESITE = os.environ.get("JWT_COOKIE_SAMESITE", "none" if JWT_COOKIE_SECURE else "lax").lower()
+if JWT_COOKIE_SAMESITE not in {"lax", "strict", "none"}:
+    raise RuntimeError("JWT_COOKIE_SAMESITE deve ser 'lax', 'strict' ou 'none'.")
+if JWT_COOKIE_SAMESITE == "none" and not JWT_COOKIE_SECURE:
+    raise RuntimeError("JWT_COOKIE_SAMESITE='none' exige JWT_COOKIE_SECURE=true.")
 
 CORS_ORIGINS = [
     origin.strip()
@@ -1238,8 +1244,8 @@ async def login(credentials: UserLogin, request: Request, response: Response):
         key=JWT_COOKIE_NAME,
         value=token,
         httponly=True,
-        secure=True,
-        samesite="none",
+        secure=JWT_COOKIE_SECURE,
+        samesite=JWT_COOKIE_SAMESITE,
         max_age=JWT_COOKIE_MAX_AGE,
         path="/"
     )
@@ -1308,9 +1314,9 @@ async def logout(response: Response):
     response.delete_cookie(
         key=JWT_COOKIE_NAME,
         path="/",
-        secure=True,
+        secure=JWT_COOKIE_SECURE,
         httponly=True,
-        samesite="none"
+        samesite=JWT_COOKIE_SAMESITE
     )
     return {"message": "Logout realizado com sucesso"}
 
@@ -1762,7 +1768,10 @@ async def get_my_responses(user: dict = Depends(get_current_user)):
     # Enrich with question data
     enriched = []
     for resp in responses:
-        question = await db.questions.find_one({"id": resp["question_id"]}, {"_id": 0})
+        question_id = resp.get("question_id")
+        question = None
+        if question_id:
+            question = await db.questions.find_one({"id": question_id}, {"_id": 0})
         enriched.append({
             **resp,
             "question": question
@@ -2029,9 +2038,15 @@ async def get_dashboard_stats(user: dict = Depends(get_current_user)):
     
     pillar_data = {}
     for resp in responses:
-        question = await db.questions.find_one({"id": resp["question_id"]}, {"_id": 0})
+        question_id = resp.get("question_id")
+        if not question_id:
+            continue
+
+        question = await db.questions.find_one({"id": question_id}, {"_id": 0})
         if question:
-            pillar = question["pillar"]
+            pillar = question.get("pillar")
+            if not pillar:
+                continue
             if pillar not in pillar_data:
                 pillar_data[pillar] = {"filled": True, "goals_count": 0, "completed": 0}
     
