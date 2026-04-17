@@ -44,9 +44,20 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (email, password) => {
     const response = await authAPI.login(email, password);
-    const { user: userData } = response.data;
-    setUser(userData);
-    return userData;
+    // Garantia de sessão persistida via cookie HttpOnly.
+    // Sem essa validação o app pode navegar para o dashboard,
+    // mas as próximas requisições autenticadas falham com 401.
+    const authenticatedUser = await checkAuth();
+    if (authenticatedUser) {
+      return authenticatedUser;
+    }
+
+    // Fallback para manter compatibilidade com cenários antigos
+    // e fornecer uma mensagem de erro mais clara para a UI.
+    setUser(null);
+    const sessionError = new Error('Sessão não foi estabelecida após o login. Verifique cookies/autenticação.');
+    sessionError.code = 'SESSION_NOT_ESTABLISHED';
+    throw sessionError;
   };
 
   const logout = async () => {
