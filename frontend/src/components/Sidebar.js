@@ -34,8 +34,10 @@ const Sidebar = () => {
 
   const navItems = [
     { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-    { path: '/pilares', icon: Hexagon, label: 'Pilares' },
-    { path: '/metas', icon: Target, label: 'Metas' },
+    ...(isAdmin() ? [] : [
+      { path: '/pilares', icon: Hexagon, label: 'Pilares' },
+      { path: '/metas', icon: Target, label: 'Metas' },
+    ]),
     { path: '/chat', icon: MessageSquare, label: 'ELIOS Chat' },
   ];
 
