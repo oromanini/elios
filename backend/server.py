@@ -2022,42 +2022,58 @@ async def reset_elios_prompt(admin: dict = Depends(get_admin_user)):
 @api_router.get("/dashboard/stats")
 async def get_dashboard_stats(user: dict = Depends(get_current_user)):
     """Get dashboard statistics for the user"""
-    
+
     # Get goals count by pillar
     pipeline = [
         {"$match": {"user_id": user["id"], "is_deleted": False}},
         {"$group": {"_id": "$pillar", "count": {"$sum": 1}, "completed": {"$sum": {"$cond": [{"$eq": ["$status", "completed"]}, 1, 0]}}}}
     ]
     goals_by_pillar = await db.goals.aggregate(pipeline).to_list(20)
-    
+
     # Get form responses for radar chart
     responses = await db.form_responses.find(
         {"user_id": user["id"]},
-        {"_id": 0}
+        {"_id": 0, "question_id": 1}
     ).to_list(100)
-    
+
+    question_ids = sorted({resp.get("question_id") for resp in responses if isinstance(resp.get("question_id"), str) and resp.get("question_id").strip()})
+    question_to_pillar: Dict[str, str] = {}
+    if question_ids:
+        question_docs = await db.questions.find(
+            {"id": {"$in": question_ids}},
+            {"_id": 0, "id": 1, "pillar": 1}
+        ).to_list(len(question_ids))
+
+        for question in question_docs:
+            pillar = question.get("pillar")
+            question_id = question.get("id")
+            if isinstance(question_id, str) and isinstance(pillar, str) and pillar.strip():
+                question_to_pillar[question_id] = pillar
+
     pillar_data = {}
     for resp in responses:
-        question_id = resp.get("question_id")
-        if not question_id:
+        pillar = question_to_pillar.get(resp.get("question_id"))
+        if not pillar:
             continue
 
-        question = await db.questions.find_one({"id": question_id}, {"_id": 0})
-        if question:
-            pillar = question.get("pillar")
-            if not pillar:
-                continue
-            if pillar not in pillar_data:
-                pillar_data[pillar] = {"filled": True, "goals_count": 0, "completed": 0}
-    
+        if pillar not in pillar_data:
+            pillar_data[pillar] = {"filled": True, "goals_count": 0, "completed": 0}
+
     # Add goals count to pillar data
     for g in goals_by_pillar:
-        pillar = g["_id"]
+        pillar = g.get("_id")
+        if not isinstance(pillar, str) or not pillar.strip():
+            # Ignore malformed goals with missing/invalid pillar to avoid breaking dashboard
+            continue
+
+        goals_count = int(g.get("count", 0) or 0)
+        completed = int(g.get("completed", 0) or 0)
+
         if pillar in pillar_data:
-            pillar_data[pillar]["goals_count"] = g["count"]
-            pillar_data[pillar]["completed"] = g["completed"]
+            pillar_data[pillar]["goals_count"] = goals_count
+            pillar_data[pillar]["completed"] = completed
         else:
-            pillar_data[pillar] = {"filled": False, "goals_count": g["count"], "completed": g["completed"]}
+            pillar_data[pillar] = {"filled": False, "goals_count": goals_count, "completed": completed}
     
     # Calculate progress percentage for radar chart (based on completed goals)
     radar_data = []
@@ -2084,8 +2100,8 @@ async def get_dashboard_stats(user: dict = Depends(get_current_user)):
     return {
         "pillars": pillar_data,
         "radar_data": radar_data,
-        "total_goals": sum(g["count"] for g in goals_by_pillar),
-        "completed_goals": sum(g["completed"] for g in goals_by_pillar)
+        "total_goals": sum(int(g.get("count", 0) or 0) for g in goals_by_pillar),
+        "completed_goals": sum(int(g.get("completed", 0) or 0) for g in goals_by_pillar)
     }
 
 # ---- INIT DEFAULT DATA ----
