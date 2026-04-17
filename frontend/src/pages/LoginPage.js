@@ -26,7 +26,7 @@ const LoginPage = () => {
       toast.success(`Bem-vindo, ${user.full_name}!`);
       navigate('/dashboard');
     } catch (error) {
-      const message = error.response?.data?.detail || 'Erro ao fazer login';
+      const message = error.response?.data?.detail || error.message || 'Erro ao fazer login';
       toast.error(message);
     } finally {
       setLoading(false);
