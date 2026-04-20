@@ -19,6 +19,7 @@ services:
       - ./backend:/app
     environment:
       MONGO_URL: mongodb://mongo:27017
+      MONGO_ATLAS_URI: mongodb://mongo:27017
       DB_NAME: elios
       JWT_SECRET: change-this-in-production
       CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000,http://0.0.0.0:3000
@@ -44,7 +45,7 @@ services:
       REACT_APP_BACKEND_URL: http://localhost:8000
       CHOKIDAR_USEPOLLING: "true"
     ports:
-      - "3000:3000"
+      - "3000:8080"
     depends_on:
       - backend
 
