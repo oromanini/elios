@@ -88,12 +88,23 @@ async def process_nps_cycles(db, target_user_id: str = None):
 
             if not last_record:
                 should_generate = True
+                next_cycle = 1
             else:
+                if last_record.get("status") == "pending":
+                    logger.info(
+                        "Usuário %s possui ciclo %s pendente. Pulando geração.",
+                        user_id,
+                        last_record.get("cycle"),
+                    )
+                    continue
+
                 last_send_date = last_record.get("send_date")
                 if last_send_date and last_send_date.tzinfo is None:
                     last_send_date = last_send_date.replace(tzinfo=timezone.utc)
                 last_cycle = int(last_record.get("cycle", 0))
                 if (
+                    last_record.get("status") == "completed"
+                    and
                     isinstance(last_send_date, datetime)
                     and now - last_send_date >= timedelta(days=30)
                     and last_cycle < 12
@@ -113,6 +124,8 @@ async def process_nps_cycles(db, target_user_id: str = None):
                     {
                         "goal_id": goal.get("id", ""),
                         "goal_title": goal.get("title", "Meta sem título"),
+                        "goal_description": goal.get("description", ""),
+                        "goal_pillar": goal.get("pillar", ""),
                         "is_completed": False,
                         "score": None,
                     }
@@ -131,6 +144,7 @@ async def process_nps_cycles(db, target_user_id: str = None):
             }
             insert_result = await db.nps_records.insert_one(nps_record)
             novo_nps_id = insert_result.inserted_id
+            logger.info("Novo registro NPS criado para usuário %s: %s", user_id, novo_nps_id)
 
             phone = user.get("phone") or user.get("whatsapp")
             if phone:
