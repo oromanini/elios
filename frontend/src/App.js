@@ -17,6 +17,7 @@ import AdminQuestionsPage from './pages/AdminQuestionsPage';
 import AdminEliosPage from './pages/AdminEliosPage';
 import AdminMentoradosPage from './pages/AdminMentoradosPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import NPSFillPage from './pages/NPSFillPage';
 
 // Protected Route Component
 const ProtectedRoute = ({ children, adminOnly = false }) => {
@@ -82,6 +83,7 @@ function AppRoutes() {
       />
       <Route path="/form" element={<FormPage />} />
       <Route path="/form/success" element={<FormSuccessPage />} />
+      <Route path="/nps/:npsId" element={<NPSFillPage />} />
 
       {/* Protected Routes */}
       <Route
