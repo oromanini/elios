@@ -14,9 +14,11 @@ FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 logger = logging.getLogger(__name__)
 
 
-def _is_valid_phone(phone: str) -> bool:
-    normalized_phone = re.sub(r"\D", "", phone or "")
-    return len(normalized_phone) >= 10
+def _format_phone_for_whatsapp(phone: str) -> str:
+    clean = re.sub(r"\D", "", phone or "")
+    if len(clean) in (10, 11) and not clean.startswith("55"):
+        clean = f"55{clean}"
+    return clean
 
 
 async def send_whatsapp_nps_link(phone: str, nps_id: str):
@@ -24,13 +26,14 @@ async def send_whatsapp_nps_link(phone: str, nps_id: str):
         logger.warning("Envio de WhatsApp desativado: EVOLUTION_API_KEY não configurada.")
         return
 
-    if not _is_valid_phone(phone):
+    clean_phone = _format_phone_for_whatsapp(phone)
+    if len(clean_phone) < 12:
         logger.warning("Envio de WhatsApp abortado: telefone inválido (%s).", phone)
         return
 
     link = f"{FRONTEND_URL}/nps/{nps_id}"
     payload = {
-        "number": phone,
+        "number": clean_phone,
         "text": "Olá! Está na hora do seu Check-in de Performance Mensal do ELIOS. "
         "Clique no link para avaliar as suas metas: " + link,
         "linkPreview": True,
