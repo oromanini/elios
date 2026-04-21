@@ -15,7 +15,9 @@ import {
   X,
   Brain,
   FileText,
-  ClipboardList
+  ClipboardList,
+  BarChart3,
+  ListChecks
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { getBackendBaseUrl } from '../config/apiBaseUrl';
@@ -40,6 +42,7 @@ const Sidebar = () => {
   const userOnlyNavItems = [
     { path: '/pilares', icon: Hexagon, label: 'Pilares' },
     { path: '/metas', icon: Target, label: 'Metas' },
+    { path: '/historico-nps', icon: ListChecks, label: 'Histórico NPS' },
   ];
 
   const navItems = isAdmin() ? baseNavItems : [...baseNavItems, ...userOnlyNavItems];
@@ -47,6 +50,7 @@ const Sidebar = () => {
   const adminItems = [
     { path: '/admin/usuarios', icon: Users, label: 'Usuários' },
     { path: '/admin/mentorados', icon: ClipboardList, label: 'Respostas' },
+    { path: '/admin/nps', icon: BarChart3, label: 'Gestão NPS' },
     { path: '/admin/perguntas', icon: FileText, label: 'Perguntas' },
     { path: '/admin/elios', icon: Brain, label: 'Treinar ELIOS' },
   ];

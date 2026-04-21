@@ -18,7 +18,8 @@ import AdminEliosPage from './pages/AdminEliosPage';
 import AdminMentoradosPage from './pages/AdminMentoradosPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import NPSFillPage from './pages/NPSFillPage';
-import NPSHistoryPage from './pages/NPSHistoryPage';
+import NpsHistory from './pages/NpsHistory';
+import AdminNpsDashboard from './pages/AdminNpsDashboard';
 
 // Protected Route Component
 const ProtectedRoute = ({ children, adminOnly = false }) => {
@@ -124,7 +125,7 @@ function AppRoutes() {
         path="/historico-nps"
         element={
           <ProtectedRoute>
-            <NPSHistoryPage />
+            <NpsHistory />
           </ProtectedRoute>
         }
       />
@@ -154,6 +155,16 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
+
+      <Route
+        path="/admin/nps"
+        element={
+          <ProtectedRoute adminOnly>
+            <AdminNpsDashboard />
+          </ProtectedRoute>
+        }
+      />
+
       <Route
         path="/admin/mentorados"
         element={
