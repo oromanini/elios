@@ -91,11 +91,6 @@ const AdminMentoradosPage = () => {
     loadResponses(resetFilters);
   };
 
-  const formatDateForInput = (value) => {
-    if (!value) return '';
-    return value.slice(0, 10);
-  };
-
   const handleGoalFieldChange = (goalId, field, value) => {
     setGoalDrafts((prev) => ({
       ...prev,
@@ -306,26 +301,10 @@ const AdminMentoradosPage = () => {
                                     className="bg-slate-900/50 border-slate-700 text-white min-h-[96px]"
                                     placeholder="Descrição da meta"
                                   />
-                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                    <Input
-                                      type="date"
-                                      value={goalDrafts[goal.id]?.target_date ?? formatDateForInput(goal.target_date)}
-                                      onChange={(e) => handleGoalFieldChange(goal.id, 'target_date', e.target.value)}
-                                      className="bg-slate-900/50 border-slate-700 text-white"
-                                    />
-                                    <select
-                                      value={goalDrafts[goal.id]?.status ?? goal.status}
-                                      onChange={(e) => handleGoalFieldChange(goal.id, 'status', e.target.value)}
-                                      className="h-10 rounded-md border border-slate-700 bg-slate-900/50 px-3 text-sm text-white"
-                                    >
-                                      <option value="active">Ativa</option>
-                                      <option value="completed">Concluída</option>
-                                    </select>
-                                  </div>
                                   <Button
                                     onClick={() => handleSaveGoal(selectedUser.user_id, goal)}
                                     disabled={savingGoals[goal.id]}
-                                    className="bg-primary hover:bg-primary/90 text-white"
+                                    className="w-full bg-primary hover:bg-primary/90 text-white md:w-auto"
                                   >
                                     <Save size={15} className="mr-2" />
                                     {savingGoals[goal.id] ? 'Salvando...' : 'Salvar meta'}
