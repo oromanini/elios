@@ -23,6 +23,8 @@ import requests
 import re
 import hashlib
 from PIL import Image, UnidentifiedImageError
+from bson import ObjectId
+from bson.errors import InvalidId
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -86,6 +88,7 @@ app = FastAPI(title="ELIOS - Sistema de Performance Elite")
 
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
+nps_router = APIRouter(prefix="/api/nps")
 
 # Configure logging
 logging.basicConfig(
@@ -375,6 +378,29 @@ class ResetPasswordRequest(BaseModel):
 
 class SystemPromptUpdate(BaseModel):
     prompt: str
+
+class GoalEvaluation(BaseModel):
+    goal_id: str
+    goal_title: str
+    is_completed: bool
+    score: Optional[int] = Field(default=None, ge=1, le=10)
+
+class NPSRecord(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
+    id: str = Field(alias="_id")
+    user_id: str
+    cycle: int = Field(ge=1, le=12)
+    send_date: datetime
+    fill_date: Optional[datetime] = None
+    evaluations: List[GoalEvaluation]
+    status: str
+
+class NPSSubmissionEvaluation(BaseModel):
+    goal_id: str
+    score: int = Field(ge=1, le=10)
+
+class NPSSubmission(BaseModel):
+    evaluations: List[NPSSubmissionEvaluation]
 
 PILLARS_WITH_META_MAGNUS = [
     "ESPIRITUALIDADE",
@@ -2156,8 +2182,75 @@ async def init_admin(setup_token: Optional[str] = None):
         "email": "admin@hutooeducacao.com"
     }
 
+def _build_nps_query(nps_id: str) -> Dict[str, Any]:
+    try:
+        return {"_id": ObjectId(nps_id)}
+    except (InvalidId, TypeError):
+        return {"_id": nps_id}
+
+
+def _serialize_nps_record(doc: Dict[str, Any]) -> Dict[str, Any]:
+    if "_id" in doc:
+        doc["_id"] = str(doc["_id"])
+    return doc
+
+
+@nps_router.get("/history/{user_id}", response_model=List[NPSRecord])
+async def get_nps_history(user_id: str):
+    records = await db.nps_records.find({"user_id": user_id}).sort("send_date", -1).to_list(200)
+    return [NPSRecord(**_serialize_nps_record(record)) for record in records]
+
+
+@nps_router.get("/link/{nps_id}", response_model=NPSRecord)
+async def get_pending_nps_link(nps_id: str):
+    nps_doc = await db.nps_records.find_one({**_build_nps_query(nps_id), "status": "pending"})
+    if not nps_doc:
+        raise HTTPException(status_code=404, detail="NPS pendente não encontrado.")
+    return NPSRecord(**_serialize_nps_record(nps_doc))
+
+
+@nps_router.post("/submit/{nps_id}", response_model=NPSRecord)
+async def submit_nps(nps_id: str, submission: NPSSubmission):
+    query = {**_build_nps_query(nps_id), "status": "pending"}
+    nps_doc = await db.nps_records.find_one(query)
+    if not nps_doc:
+        raise HTTPException(status_code=404, detail="NPS pendente não encontrado para submissão.")
+
+    score_map = {item.goal_id: item.score for item in submission.evaluations}
+    merged_evaluations: List[Dict[str, Any]] = []
+    for evaluation in nps_doc.get("evaluations", []):
+        goal_id = evaluation.get("goal_id")
+        is_completed = bool(evaluation.get("is_completed"))
+        if is_completed:
+            evaluation["score"] = 10
+        else:
+            if goal_id not in score_map:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Score não informado para meta ativa: {goal_id}.",
+                )
+            evaluation["score"] = score_map[goal_id]
+        merged_evaluations.append(evaluation)
+
+    await db.nps_records.update_one(
+        _build_nps_query(nps_id),
+        {
+            "$set": {
+                "evaluations": merged_evaluations,
+                "status": "completed",
+                "fill_date": datetime.now(timezone.utc),
+            }
+        },
+    )
+
+    updated_doc = await db.nps_records.find_one(_build_nps_query(nps_id))
+    if not updated_doc:
+        raise HTTPException(status_code=404, detail="NPS não encontrado após atualização.")
+    return NPSRecord(**_serialize_nps_record(updated_doc))
+
 # Include the router in the main app
 app.include_router(api_router)
+app.include_router(nps_router)
 
 app.add_middleware(
     CORSMiddleware,
