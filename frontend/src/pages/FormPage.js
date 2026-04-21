@@ -20,7 +20,8 @@ import {
   User,
   Mail,
   Camera,
-  CalendarDays
+  CalendarDays,
+  Phone
 } from 'lucide-react';
 
 const PILLAR_ICON_THEMES = {
@@ -152,6 +153,15 @@ const PillarStepIcon = ({ pillar }) => {
 
 const MIN_QUESTION_ANSWER_LENGTH = 50;
 
+const applyPhoneMask = (value) => {
+  const digits = value.replace(/\D/g, '').slice(0, 11);
+
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  if (digits.length <= 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+};
+
 const FormPage = () => {
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(0);
@@ -168,6 +178,7 @@ const FormPage = () => {
   const [email, setEmail] = useState('');
   const [profilePhoto, setProfilePhoto] = useState(null);
   const [profilePhotoPreview, setProfilePhotoPreview] = useState('');
+  const [whatsapp, setWhatsapp] = useState('');
   const [birthDate, setBirthDate] = useState('');
   const [responses, setResponses] = useState({});
 
@@ -200,7 +211,7 @@ const FormPage = () => {
     }
   };
 
-  const totalSteps = questions.length + 4; // Name + Email + Photo + Birth date + Questions
+  const totalSteps = questions.length + 5; // Name + Email + Photo + WhatsApp + Birth date + Questions
   const progress = ((currentStep + 1) / totalSteps) * 100;
 
   const handleNext = async () => {
@@ -212,12 +223,16 @@ const FormPage = () => {
       toast.error('Por favor, insira um email válido');
       return;
     }
-    if (currentStep === 3 && !birthDate) {
+    if (currentStep === 3 && whatsapp.replace(/\D/g, '').length < 10) {
+      toast.error('Por favor, informe um WhatsApp válido');
+      return;
+    }
+    if (currentStep === 4 && !birthDate) {
       toast.error('Por favor, informe sua data de nascimento');
       return;
     }
-    if (currentStep >= 4) {
-      const question = questions[currentStep - 4];
+    if (currentStep >= 5) {
+      const question = questions[currentStep - 5];
       const answer = responses[question.id]?.trim() || '';
       if (answer.length < MIN_QUESTION_ANSWER_LENGTH) {
         toast.error(`Por favor, escreva pelo menos ${MIN_QUESTION_ANSWER_LENGTH} caracteres para continuar`);
@@ -291,6 +306,7 @@ const FormPage = () => {
       const formData = new FormData();
       formData.append('full_name', fullName);
       formData.append('email', email);
+      formData.append('whatsapp', whatsapp);
       formData.append('date_of_birth', birthDate);
       formData.append('responses', JSON.stringify(formattedResponses));
       const detectedGoals = Object.entries(questionAnalyses).flatMap(([questionId, analysis]) =>
@@ -494,6 +510,41 @@ const FormPage = () => {
     if (currentStep === 3) {
       return (
         <motion.div
+          key="step-whatsapp"
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: -20 }}
+          className="space-y-6"
+        >
+          <div className="text-center mb-8">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-primary/20 flex items-center justify-center">
+              <Phone className="w-8 h-8 text-primary" />
+            </div>
+            <h2 className="text-2xl font-bold text-white mb-2">Seu WhatsApp</h2>
+            <p className="text-slate-400">Qual número devemos usar para falar com você?</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="whatsapp" className="text-slate-400 uppercase text-xs tracking-wide">
+              WhatsApp
+            </Label>
+            <Input
+              id="whatsapp"
+              type="tel"
+              placeholder="(11) 99999-9999"
+              value={whatsapp}
+              onChange={(e) => setWhatsapp(applyPhoneMask(e.target.value))}
+              className="bg-slate-900/50 border-slate-700 text-white placeholder:text-slate-500 h-14 text-lg"
+              data-testid="form-whatsapp"
+            />
+          </div>
+        </motion.div>
+      );
+    }
+
+    if (currentStep === 4) {
+      return (
+        <motion.div
           key="step-birthdate"
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
@@ -525,7 +576,7 @@ const FormPage = () => {
       );
     }
 
-    const questionIndex = currentStep - 4;
+    const questionIndex = currentStep - 5;
     const question = questions[questionIndex];
 
     if (!question) return null;

@@ -23,6 +23,15 @@ import {
   Camera
 } from 'lucide-react';
 
+const applyPhoneMask = (value) => {
+  const digits = value.replace(/\D/g, '').slice(0, 11);
+
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  if (digits.length <= 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+};
+
 const AdminUsersPage = () => {
   const backendBaseUrl = getBackendBaseUrl();
   const [users, setUsers] = useState([]);
@@ -40,7 +49,8 @@ const AdminUsersPage = () => {
   });
   const [editData, setEditData] = useState({
     full_name: '',
-    email: ''
+    email: '',
+    whatsapp: ''
   });
   const [editPhotoFile, setEditPhotoFile] = useState(null);
   const [editPhotoPreview, setEditPhotoPreview] = useState(null);
@@ -98,7 +108,8 @@ const AdminUsersPage = () => {
     setSelectedUser(user);
     setEditData({
       full_name: user.full_name,
-      email: user.email
+      email: user.email,
+      whatsapp: user.whatsapp || ''
     });
     setEditPhotoFile(null);
     setEditPhotoPreview(currentPhotoUrl);
@@ -141,7 +152,8 @@ const AdminUsersPage = () => {
     try {
       const hasProfileChanged = (
         editData.full_name !== selectedUser.full_name ||
-        editData.email !== selectedUser.email
+        editData.email !== selectedUser.email ||
+        editData.whatsapp !== (selectedUser.whatsapp || '')
       );
 
       if (!hasProfileChanged && !editPhotoFile) {
@@ -542,6 +554,15 @@ const AdminUsersPage = () => {
                 placeholder="Email"
                 value={editData.email}
                 onChange={(event) => setEditData((prev) => ({ ...prev, email: event.target.value }))}
+                className="bg-slate-900/50 border-slate-700 text-white"
+              />
+              <Input
+                type="tel"
+                placeholder="WhatsApp"
+                value={editData.whatsapp}
+                onChange={(event) =>
+                  setEditData((prev) => ({ ...prev, whatsapp: applyPhoneMask(event.target.value) }))
+                }
                 className="bg-slate-900/50 border-slate-700 text-white"
               />
             </div>
