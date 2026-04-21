@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, BackgroundTasks, UploadFile, File, Form, Request, Response
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, BackgroundTasks, UploadFile, File, Form, Request, Response, Query
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -406,6 +406,22 @@ class NPSSubmissionEvaluation(BaseModel):
 
 class NPSSubmission(BaseModel):
     evaluations: List[NPSSubmissionEvaluation]
+
+
+class NPSHistoryItem(BaseModel):
+    send_date: datetime
+    fill_date: Optional[datetime] = None
+    status: str
+    average_score: Optional[float] = None
+    cycle: int
+
+
+class AdminNPSOverviewItem(BaseModel):
+    user_id: str
+    full_name: str
+    email: str
+    last_nps_status: Optional[str] = None
+    last_nps_date: Optional[datetime] = None
 
 PILLARS_WITH_META_MAGNUS = [
     "ESPIRITUALIDADE",
@@ -2206,6 +2222,50 @@ async def get_nps_history(user_id: str):
     return [NPSRecord(**_serialize_nps_record(record)) for record in records]
 
 
+@nps_router.get("/history", response_model=List[NPSHistoryItem])
+async def get_my_nps_history(current_user: dict = Depends(get_current_user)):
+    records = await db.nps_records.find({"user_id": current_user["id"]}).sort("cycle", 1).to_list(200)
+    history = []
+    for record in records:
+        evaluations = record.get("evaluations", [])
+        scores = [evaluation.get("score") for evaluation in evaluations if isinstance(evaluation.get("score"), (int, float))]
+        average_score = round(sum(scores) / len(scores), 2) if scores else None
+        history.append(
+            NPSHistoryItem(
+                send_date=record.get("send_date"),
+                fill_date=record.get("fill_date"),
+                status=record.get("status", "pending"),
+                average_score=average_score,
+                cycle=int(record.get("cycle", 1)),
+            )
+        )
+    return history
+
+
+@api_router.get("/admin/nps-overview", response_model=List[AdminNPSOverviewItem])
+async def get_admin_nps_overview(admin: dict = Depends(get_admin_user)):
+    _ = admin
+    users = await db.users.find({"is_active": True, "role": "DEFAULT"}).to_list(length=None)
+    overview: List[AdminNPSOverviewItem] = []
+
+    for user in users:
+        user_id = user.get("id")
+        if not user_id:
+            continue
+        latest_nps = await db.nps_records.find_one({"user_id": user_id}, sort=[("send_date", -1)])
+        overview.append(
+            AdminNPSOverviewItem(
+                user_id=user_id,
+                full_name=user.get("full_name", "Sem nome"),
+                email=user.get("email", ""),
+                last_nps_status=latest_nps.get("status") if latest_nps else None,
+                last_nps_date=latest_nps.get("send_date") if latest_nps else None,
+            )
+        )
+
+    return overview
+
+
 @nps_router.get("/link/{nps_id}", response_model=NPSRecord)
 async def get_pending_nps_link(nps_id: str):
     nps_doc = await db.nps_records.find_one({**_build_nps_query(nps_id), "status": "pending"})
@@ -2255,9 +2315,14 @@ async def submit_nps(nps_id: str, submission: NPSSubmission):
 
 
 @nps_router.post("/trigger/{user_id}")
-async def trigger_nps_for_user(user_id: str):
-    await process_nps_cycles(db, target_user_id=user_id)
-    return {"message": "Processamento manual de NPS executado com sucesso para o utilizador."}
+async def trigger_nps_for_user(
+    user_id: str,
+    force: bool = Query(default=False),
+    admin: dict = Depends(get_admin_user),
+):
+    _ = admin
+    await process_nps_cycles(db, target_user_id=user_id, force=force)
+    return {"message": "Processamento manual de NPS executado com sucesso para o utilizador.", "force": force}
 
 
 # Include the router in the main app
