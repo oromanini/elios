@@ -68,7 +68,7 @@ async def send_whatsapp_nps_link(phone: str, nps_id: str):
         logger.warning("Falha ao enviar WhatsApp para %s: %s", phone, exc)
 
 
-async def process_nps_cycles(db, target_user_id: str = None):
+async def process_nps_cycles(db, target_user_id: str = None, force: bool = False):
     now = datetime.now(timezone.utc)
     query = {"is_active": True, "role": "DEFAULT"}
     if target_user_id is not None:
@@ -91,11 +91,27 @@ async def process_nps_cycles(db, target_user_id: str = None):
                 next_cycle = 1
             else:
                 if last_record.get("status") == "pending":
-                    logger.info(
-                        "Usuário %s possui ciclo %s pendente. Pulando geração.",
-                        user_id,
-                        last_record.get("cycle"),
-                    )
+                    if force:
+                        phone = user.get("phone") or user.get("whatsapp")
+                        if phone:
+                            await send_whatsapp_nps_link(phone, str(last_record.get("_id")))
+                            logger.info(
+                                "Usuário %s possui ciclo %s pendente. Link reenviado por force.",
+                                user_id,
+                                last_record.get("cycle"),
+                            )
+                        else:
+                            logger.info(
+                                "Usuário %s possui ciclo %s pendente, mas sem telefone para reenvio.",
+                                user_id,
+                                last_record.get("cycle"),
+                            )
+                    else:
+                        logger.info(
+                            "Usuário %s possui ciclo %s pendente. Pulando geração.",
+                            user_id,
+                            last_record.get("cycle"),
+                        )
                     continue
 
                 last_send_date = last_record.get("send_date")
@@ -104,10 +120,9 @@ async def process_nps_cycles(db, target_user_id: str = None):
                 last_cycle = int(last_record.get("cycle", 0))
                 if (
                     last_record.get("status") == "completed"
-                    and
-                    isinstance(last_send_date, datetime)
-                    and now - last_send_date >= timedelta(days=30)
+                    and isinstance(last_send_date, datetime)
                     and last_cycle < 12
+                    and (force or now - last_send_date >= timedelta(days=30))
                 ):
                     should_generate = True
                     next_cycle = last_cycle + 1
