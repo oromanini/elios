@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import re
@@ -31,11 +32,17 @@ async def send_whatsapp_nps_link(phone: str, nps_id: str):
         logger.warning("Envio de WhatsApp abortado: telefone inválido (%s).", phone)
         return
 
-    link = f"{FRONTEND_URL}/nps/{nps_id}"
-    payload = {
+    base_url = FRONTEND_URL
+    link = f"{base_url}/nps/{nps_id}"
+    first_payload = {
         "number": clean_phone,
         "text": "Olá! Está na hora do seu Check-in de Performance Mensal do ELIOS. "
-        "Clique no link para avaliar as suas metas: " + link,
+        "Clique no link para avaliar as suas metas:",
+        "linkPreview": True,
+    }
+    second_payload = {
+        "number": clean_phone,
+        "text": link,
         "linkPreview": True,
     }
     headers = {
@@ -46,8 +53,17 @@ async def send_whatsapp_nps_link(phone: str, nps_id: str):
     endpoint = f"{EVOLUTION_API_URL}/message/sendText/{EVOLUTION_INSTANCE}"
     try:
         async with httpx.AsyncClient(timeout=20.0) as client:
-            response = await client.post(endpoint, json=payload, headers=headers)
-            response.raise_for_status()
+            logger.info("Tentando enviar primeira mensagem de NPS para %s.", clean_phone)
+            first_response = await client.post(endpoint, json=first_payload, headers=headers)
+            first_response.raise_for_status()
+            logger.info("Primeira mensagem de NPS enviada para %s.", clean_phone)
+
+            await asyncio.sleep(1)
+
+            logger.info("Tentando enviar link de NPS para %s.", clean_phone)
+            second_response = await client.post(endpoint, json=second_payload, headers=headers)
+            second_response.raise_for_status()
+            logger.info("Link de NPS enviado para %s.", clean_phone)
     except Exception as exc:
         logger.warning("Falha ao enviar WhatsApp para %s: %s", phone, exc)
 
