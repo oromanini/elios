@@ -32,12 +32,17 @@ const Sidebar = () => {
     navigate('/');
   };
 
-  const navItems = [
+  const baseNavItems = [
     { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-    { path: '/pilares', icon: Hexagon, label: 'Pilares' },
-    { path: '/metas', icon: Target, label: 'Metas' },
     { path: '/chat', icon: MessageSquare, label: 'ELIOS Chat' },
   ];
+
+  const userOnlyNavItems = [
+    { path: '/pilares', icon: Hexagon, label: 'Pilares' },
+    { path: '/metas', icon: Target, label: 'Metas' },
+  ];
+
+  const navItems = isAdmin() ? baseNavItems : [...baseNavItems, ...userOnlyNavItems];
 
   const adminItems = [
     { path: '/admin/usuarios', icon: Users, label: 'Usuários' },
