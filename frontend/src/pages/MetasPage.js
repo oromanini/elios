@@ -52,7 +52,6 @@ const MetasPage = () => {
     pillar: '',
     title: '',
     description: '',
-    target_date: '',
     status: 'active'
   });
 
@@ -137,7 +136,6 @@ const MetasPage = () => {
       pillar: goal.pillar,
       title: goal.title,
       description: goal.description,
-      target_date: goal.target_date || '',
       status: goal.status
     });
     setDialogOpen(true);
@@ -150,7 +148,6 @@ const MetasPage = () => {
       pillar: '',
       title: '',
       description: '',
-      target_date: '',
       status: 'active'
     });
   };
@@ -420,16 +417,9 @@ const MetasPage = () => {
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label className="text-slate-400">Data Limite</Label>
-                <Input
-                  type="date"
-                  value={formData.target_date}
-                  onChange={(e) => setFormData(prev => ({ ...prev, target_date: e.target.value }))}
-                  className="bg-slate-900/50 border-slate-700 text-white"
-                  data-testid="goal-date"
-                />
-              </div>
+              <p className="text-xs text-slate-500">
+                A data limite é definida automaticamente conforme o ciclo de 12 meses do usuário.
+              </p>
             </div>
 
             <DialogFooter>

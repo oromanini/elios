@@ -10,7 +10,7 @@ import json
 from pydantic import BaseModel, Field, ConfigDict, EmailStr
 from typing import List, Optional, Dict, Any
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 import jwt
 import bcrypt
 import smtplib
@@ -282,6 +282,47 @@ class GoalResponse(BaseModel):
     status: str = "active"
     created_at: str
     is_deleted: bool = False
+
+
+def _parse_iso_to_date(value: str) -> date:
+    """Parse ISO datetime/date strings into date."""
+    normalized = value.replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(normalized).date()
+    except ValueError:
+        return date.fromisoformat(value[:10])
+
+
+def _add_12_months(value: date) -> date:
+    """Add 12 calendar months preserving day when possible."""
+    try:
+        return value.replace(year=value.year + 1)
+    except ValueError:
+        # Handles Feb 29 -> Feb 28 in non-leap years
+        return value.replace(year=value.year + 1, day=28)
+
+
+def _get_user_cycle_window(user_created_at: str, reference_day: Optional[date] = None) -> tuple[date, date]:
+    """
+    Return the active cycle start/end for the reference day.
+    Cycle 1: starts on registration date and ends 12 months later.
+    Next cycle starts on D+1 of previous cycle end.
+    """
+    today = reference_day or datetime.now(timezone.utc).date()
+    cycle_start = _parse_iso_to_date(user_created_at)
+    cycle_end = _add_12_months(cycle_start)
+
+    while today > cycle_end:
+        cycle_start = cycle_end + timedelta(days=1)
+        cycle_end = _add_12_months(cycle_start)
+
+    return cycle_start, cycle_end
+
+
+def _get_current_cycle_deadline(user_created_at: str, reference_day: Optional[date] = None) -> str:
+    """Return current cycle end as YYYY-MM-DD."""
+    _, cycle_end = _get_user_cycle_window(user_created_at, reference_day=reference_day)
+    return cycle_end.isoformat()
 
 class ChatMessage(BaseModel):
     message: str
@@ -1496,8 +1537,22 @@ async def update_user_goal_by_admin(
         raise HTTPException(status_code=404, detail="Meta não encontrada")
 
     update_dict = {k: v for k, v in update.model_dump().items() if v is not None}
+    if "target_date" in update_dict:
+        update_dict.pop("target_date")
     if not update_dict:
         raise HTTPException(status_code=400, detail="Nenhum campo para atualizar")
+
+    target_user = await db.users.find_one({"id": user_id}, {"_id": 0, "created_at": 1})
+    if not target_user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+    if update_dict.get("status") == "completed":
+        cycle_deadline = _get_current_cycle_deadline(target_user["created_at"])
+        if datetime.now(timezone.utc).date() > date.fromisoformat(cycle_deadline):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Não é possível concluir metas após o encerramento do ciclo ({cycle_deadline})."
+            )
 
     history_doc = {
         "id": str(uuid.uuid4()),
@@ -1671,7 +1726,7 @@ async def submit_form(submission: FormSubmission = Depends(FormSubmission.as_for
             "pillar": goal.pillar,
             "title": goal.title,
             "description": goal.description,
-            "target_date": None,
+            "target_date": _get_current_cycle_deadline(user_doc["created_at"]),
             "status": "active",
             "is_deleted": False,
             "created_at": datetime.now(timezone.utc).isoformat()
@@ -1755,6 +1810,14 @@ async def list_goals(user: dict = Depends(get_current_user)):
         {"user_id": user["id"], "is_deleted": False},
         {"_id": 0}
     ).sort("created_at", -1).to_list(100)
+    current_cycle_deadline = _get_current_cycle_deadline(user["created_at"])
+    for goal in goals:
+        if goal.get("status") == "active" and goal.get("target_date") != current_cycle_deadline:
+            goal["target_date"] = current_cycle_deadline
+            await db.goals.update_one(
+                {"id": goal["id"], "user_id": user["id"]},
+                {"$set": {"target_date": current_cycle_deadline, "updated_at": datetime.now(timezone.utc).isoformat()}}
+            )
     return [GoalResponse(**g) for g in goals]
 
 @api_router.get("/goals/pillar/{pillar}")
@@ -1764,15 +1827,27 @@ async def get_goals_by_pillar(pillar: str, user: dict = Depends(get_current_user
         {"user_id": user["id"], "pillar": pillar, "is_deleted": False},
         {"_id": 0}
     ).to_list(100)
+    current_cycle_deadline = _get_current_cycle_deadline(user["created_at"])
+    for goal in goals:
+        if goal.get("status") == "active" and goal.get("target_date") != current_cycle_deadline:
+            goal["target_date"] = current_cycle_deadline
+            await db.goals.update_one(
+                {"id": goal["id"], "user_id": user["id"]},
+                {"$set": {"target_date": current_cycle_deadline, "updated_at": datetime.now(timezone.utc).isoformat()}}
+            )
     return goals
 
 @api_router.post("/goals", response_model=GoalResponse)
 async def create_goal(goal: GoalCreate, user: dict = Depends(get_current_user)):
     """Create a new goal"""
+    cycle_deadline = _get_current_cycle_deadline(user["created_at"])
     goal_doc = {
         "id": str(uuid.uuid4()),
         "user_id": user["id"],
-        **goal.model_dump(),
+        "pillar": goal.pillar,
+        "title": goal.title,
+        "description": goal.description,
+        "target_date": cycle_deadline,
         "status": "active",
         "is_deleted": False,
         "created_at": datetime.now(timezone.utc).isoformat()
@@ -1793,6 +1868,16 @@ async def update_goal(goal_id: str, update: GoalUpdate, user: dict = Depends(get
         raise HTTPException(status_code=404, detail="Meta não encontrada")
     
     update_dict = {k: v for k, v in update.model_dump().items() if v is not None}
+    if "target_date" in update_dict:
+        update_dict.pop("target_date")
+
+    if update_dict.get("status") == "completed":
+        cycle_deadline = _get_current_cycle_deadline(user["created_at"])
+        if datetime.now(timezone.utc).date() > date.fromisoformat(cycle_deadline):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Não é possível concluir metas após o encerramento do ciclo ({cycle_deadline})."
+            )
     
     if update_dict:
         # Save history
