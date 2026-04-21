@@ -409,6 +409,7 @@ class NPSSubmission(BaseModel):
 
 
 class NPSHistoryItem(BaseModel):
+    id: str
     send_date: datetime
     fill_date: Optional[datetime] = None
     status: str
@@ -2232,6 +2233,7 @@ async def get_my_nps_history(current_user: dict = Depends(get_current_user)):
         average_score = round(sum(scores) / len(scores), 2) if scores else None
         history.append(
             NPSHistoryItem(
+                id=str(record.get("_id")),
                 send_date=record.get("send_date"),
                 fill_date=record.get("fill_date"),
                 status=record.get("status", "pending"),
