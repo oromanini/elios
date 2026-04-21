@@ -43,14 +43,14 @@ JWT_ALGORITHM = "HS256"
 JWT_EXP_HOURS = int(os.environ.get("JWT_EXP_HOURS", "12"))
 JWT_COOKIE_NAME = os.environ.get("JWT_COOKIE_NAME", "elios_token")
 JWT_COOKIE_MAX_AGE = JWT_EXP_HOURS * 3600
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
-CORS_ORIGINS = [
-    origin.strip()
-    for origin in os.environ.get('CORS_ORIGINS', os.environ.get('FRONTEND_URL', 'http://localhost:3000')).split(',')
-    if origin.strip()
-]
+raw_cors = os.getenv("CORS_ORIGINS", FRONTEND_URL)
+CORS_ORIGINS = [origin.strip() for origin in raw_cors.split(",") if origin.strip()]
 if not CORS_ORIGINS:
-    CORS_ORIGINS = ['http://localhost:3000']
+    CORS_ORIGINS = [FRONTEND_URL]
+if FRONTEND_URL not in CORS_ORIGINS:
+    CORS_ORIGINS.append(FRONTEND_URL)
 if '*' in CORS_ORIGINS:
     raise RuntimeError('CORS_ORIGINS não pode conter "*" quando cookies com credenciais estão habilitados.')
 
