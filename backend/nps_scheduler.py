@@ -64,55 +64,60 @@ async def process_nps_cycles(db, target_user_id: str = None):
         if not user_id:
             continue
 
-        last_record = await db.nps_records.find_one({"user_id": user_id}, sort=[("send_date", -1)])
+        try:
+            last_record = await db.nps_records.find_one({"user_id": user_id}, sort=[("send_date", -1)])
 
-        next_cycle = 1
-        should_generate = False
+            next_cycle = 1
+            should_generate = False
 
-        if not last_record:
-            should_generate = True
-        else:
-            last_send_date = last_record.get("send_date")
-            last_cycle = int(last_record.get("cycle", 0))
-            if (
-                isinstance(last_send_date, datetime)
-                and now - last_send_date >= timedelta(days=30)
-                and last_cycle < 12
-            ):
+            if not last_record:
                 should_generate = True
-                next_cycle = last_cycle + 1
+            else:
+                last_send_date = last_record.get("send_date")
+                if last_send_date and last_send_date.tzinfo is None:
+                    last_send_date = last_send_date.replace(tzinfo=timezone.utc)
+                last_cycle = int(last_record.get("cycle", 0))
+                if (
+                    isinstance(last_send_date, datetime)
+                    and now - last_send_date >= timedelta(days=30)
+                    and last_cycle < 12
+                ):
+                    should_generate = True
+                    next_cycle = last_cycle + 1
 
-        if not should_generate:
-            continue
-
-        goals: List[Dict[str, Any]] = await db.goals.find({"user_id": user_id}).to_list(length=None)
-        evaluations = []
-        for goal in goals:
-            if goal.get("is_completed", False):
+            if not should_generate:
                 continue
-            evaluations.append(
-                {
-                    "goal_id": goal.get("id", ""),
-                    "goal_title": goal.get("title", "Meta sem título"),
-                    "is_completed": False,
-                    "score": None,
-                }
-            )
 
-        if len(evaluations) == 0:
-            continue
+            goals: List[Dict[str, Any]] = await db.goals.find({"user_id": user_id}).to_list(length=None)
+            evaluations = []
+            for goal in goals:
+                if goal.get("is_completed", False):
+                    continue
+                evaluations.append(
+                    {
+                        "goal_id": goal.get("id", ""),
+                        "goal_title": goal.get("title", "Meta sem título"),
+                        "is_completed": False,
+                        "score": None,
+                    }
+                )
 
-        nps_record = {
-            "user_id": user_id,
-            "cycle": next_cycle,
-            "send_date": datetime.now(timezone.utc),
-            "fill_date": None,
-            "evaluations": evaluations,
-            "status": "pending",
-        }
-        insert_result = await db.nps_records.insert_one(nps_record)
-        novo_nps_id = insert_result.inserted_id
+            if len(evaluations) == 0:
+                continue
 
-        phone = user.get("phone") or user.get("whatsapp")
-        if phone:
-            await send_whatsapp_nps_link(phone, str(novo_nps_id))
+            nps_record = {
+                "user_id": user_id,
+                "cycle": next_cycle,
+                "send_date": datetime.now(timezone.utc),
+                "fill_date": None,
+                "evaluations": evaluations,
+                "status": "pending",
+            }
+            insert_result = await db.nps_records.insert_one(nps_record)
+            novo_nps_id = insert_result.inserted_id
+
+            phone = user.get("phone") or user.get("whatsapp")
+            if phone:
+                await send_whatsapp_nps_link(phone, str(novo_nps_id))
+        except Exception:
+            logger.error("Falha ao processar ciclo NPS para user_id=%s", user_id, exc_info=True)
