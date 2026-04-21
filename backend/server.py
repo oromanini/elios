@@ -149,10 +149,12 @@ class UserResponse(BaseModel):
     form_completed: bool = False
     elios_summary: Optional[str] = None
     profile_photo_url: Optional[str] = None
+    whatsapp: Optional[str] = None
 
 class UserUpdate(BaseModel):
     full_name: Optional[str] = None
     email: Optional[EmailStr] = None
+    whatsapp: Optional[str] = None
     is_active: Optional[bool] = None
     role: Optional[str] = None
 
@@ -208,6 +210,7 @@ class FormDetectedGoal(BaseModel):
 class FormSubmission(BaseModel):
     full_name: str
     email: EmailStr
+    whatsapp: str
     date_of_birth: Optional[str] = None
     profile_photo: Optional[UploadFile] = None
     responses: List[FormResponseCreate]
@@ -218,6 +221,7 @@ class FormSubmission(BaseModel):
         cls,
         full_name: str = Form(...),
         email: EmailStr = Form(...),
+        whatsapp: str = Form(...),
         date_of_birth: Optional[str] = Form(None),
         responses: str = Form(...),
         detected_goals: Optional[str] = Form(None),
@@ -248,6 +252,7 @@ class FormSubmission(BaseModel):
         return cls(
             full_name=full_name,
             email=email,
+            whatsapp=whatsapp,
             date_of_birth=date_of_birth,
             responses=response_items,
             detected_goals=parsed_detected_goals,
@@ -1628,6 +1633,7 @@ async def submit_form(submission: FormSubmission = Depends(FormSubmission.as_for
         "id": user_id,
         "full_name": submission.full_name,
         "email": submission.email,
+        "whatsapp": submission.whatsapp,
         "date_of_birth": submission.date_of_birth,
         "password_hash": hash_password(password),
         "role": "DEFAULT",
