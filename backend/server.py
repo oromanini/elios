@@ -25,6 +25,9 @@ import hashlib
 from PIL import Image, UnidentifiedImageError
 from bson import ObjectId
 from bson.errors import InvalidId
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+from nps_scheduler import process_nps_cycles
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -96,6 +99,8 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+scheduler = AsyncIOScheduler(timezone="UTC")
 
 # Default ELIOS System Prompt
 DEFAULT_ELIOS_PROMPT = """Você é o ELIOS, uma Inteligência Artificial avançada atuando como Coach de Alta Performance Individual. 
@@ -2248,6 +2253,13 @@ async def submit_nps(nps_id: str, submission: NPSSubmission):
         raise HTTPException(status_code=404, detail="NPS não encontrado após atualização.")
     return NPSRecord(**_serialize_nps_record(updated_doc))
 
+
+@nps_router.post("/trigger-cron")
+async def trigger_nps_cron():
+    await process_nps_cycles(db)
+    return {"message": "Processamento manual do cron NPS executado com sucesso."}
+
+
 # Include the router in the main app
 app.include_router(api_router)
 app.include_router(nps_router)
@@ -2260,6 +2272,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.on_event("startup")
+async def startup_scheduler():
+    scheduler.add_job(
+        process_nps_cycles,
+        "cron",
+        hour=8,
+        minute=0,
+        args=[db],
+        id="nps_daily_cron",
+        replace_existing=True,
+    )
+    if not scheduler.running:
+        scheduler.start()
+
+
 @app.on_event("shutdown")
 async def shutdown_db_client():
+    if scheduler.running:
+        scheduler.shutdown(wait=False)
     client.close()
