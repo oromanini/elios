@@ -2254,10 +2254,10 @@ async def submit_nps(nps_id: str, submission: NPSSubmission):
     return NPSRecord(**_serialize_nps_record(updated_doc))
 
 
-@nps_router.post("/trigger-cron")
-async def trigger_nps_cron():
-    await process_nps_cycles(db)
-    return {"message": "Processamento manual do cron NPS executado com sucesso."}
+@nps_router.post("/trigger/{user_id}")
+async def trigger_nps_for_user(user_id: str):
+    await process_nps_cycles(db, target_user_id=user_id)
+    return {"message": "Processamento manual de NPS executado com sucesso para o utilizador."}
 
 
 # Include the router in the main app

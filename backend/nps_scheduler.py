@@ -49,9 +49,12 @@ async def send_whatsapp_nps_link(phone: str, nps_id: str):
         logger.warning("Falha ao enviar WhatsApp para %s: %s", phone, exc)
 
 
-async def process_nps_cycles(db):
+async def process_nps_cycles(db, target_user_id: str = None):
     now = datetime.now(timezone.utc)
-    users = await db.users.find({"is_active": True}).to_list(length=None)
+    query = {"is_active": True, "role": "DEFAULT"}
+    if target_user_id is not None:
+        query["id"] = target_user_id
+    users = await db.users.find(query).to_list(length=None)
 
     for user in users:
         user_id = user.get("id")
@@ -92,6 +95,9 @@ async def process_nps_cycles(db):
                     "score": None,
                 }
             )
+
+        if len(evaluations) == 0:
+            continue
 
         nps_record = {
             "user_id": user_id,
