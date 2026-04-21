@@ -18,6 +18,7 @@ import AdminEliosPage from './pages/AdminEliosPage';
 import AdminMentoradosPage from './pages/AdminMentoradosPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import NPSFillPage from './pages/NPSFillPage';
+import NPSHistoryPage from './pages/NPSHistoryPage';
 
 // Protected Route Component
 const ProtectedRoute = ({ children, adminOnly = false }) => {
@@ -115,6 +116,15 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <MetasPage />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/historico-nps"
+        element={
+          <ProtectedRoute>
+            <NPSHistoryPage />
           </ProtectedRoute>
         }
       />
