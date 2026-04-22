@@ -218,7 +218,6 @@ const AdminNpsDashboard = () => {
                       </span>
                     </div>
                     <p className="text-sm font-medium text-white">{evaluation.goal_title || 'Meta sem título'}</p>
-                    <p className="mt-1 text-xs italic text-slate-300">{evaluation.goal_description || 'Sem descrição informada.'}</p>
                   </div>
                 ))}
               </div>
