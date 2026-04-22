@@ -1727,6 +1727,14 @@ async def _resolve_whatsapp_user_by_identity(remote_jid: str, incoming_message: 
     if not user or not user.get("id"):
         return {"status": "email_not_found"}
 
+    linked_with_other_lid = await db.whatsapp_identity_resolution.find_one(
+        {"user_id": user["id"], "lid": {"$ne": remote_jid}},
+        {"_id": 0, "lid": 1},
+    )
+    if linked_with_other_lid and linked_with_other_lid.get("lid"):
+        return {"status": "email_already_linked_elsewhere"}
+
+    now_iso = datetime.now(timezone.utc).isoformat()
     await db.whatsapp_identity_resolution.update_one(
         {"lid": remote_jid},
         {
@@ -1734,32 +1742,42 @@ async def _resolve_whatsapp_user_by_identity(remote_jid: str, incoming_message: 
                 "lid": remote_jid,
                 "user_id": user["id"],
                 "email": user.get("email", email_candidate),
-                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": now_iso,
             },
             "$setOnInsert": {
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": now_iso,
             },
         },
         upsert=True,
     )
+    await db.whatsapp_identity_history.insert_one(
+        {
+            "id": str(uuid.uuid4()),
+            "user_id": user["id"],
+            "lid": remote_jid,
+            "email": user.get("email", email_candidate),
+            "event": "link_created",
+            "source": "whatsapp_auto_resolution",
+            "created_at": now_iso,
+        }
+    )
     return {"status": "linked_now", "user": user}
 
 
-async def _send_chatbot_whatsapp_message(phone: str, text: str):
+async def _send_chatbot_whatsapp_message(remote_jid: str, text: str):
     if not EVOLUTION_API_KEY:
         logger.warning("Envio de WhatsApp do chatbot desativado: EVOLUTION_API_KEY não configurada.")
         return
 
-    clean_phone = format_phone_for_whatsapp(phone)
-    if len(clean_phone) < 12:
-        logger.warning("Envio de WhatsApp do chatbot abortado: telefone inválido (%s).", phone)
+    if not isinstance(remote_jid, str) or "@" not in remote_jid:
+        logger.warning("Envio de WhatsApp do chatbot abortado: JID inválido (%s).", remote_jid)
         return
 
     try:
-        await send_whatsapp_text(clean_phone, text)
-        logger.info(f"Resposta do ELIOS enviada com sucesso para {phone}")
+        await send_whatsapp_text(remote_jid.strip(), text)
+        logger.info(f"Resposta do ELIOS enviada com sucesso para {remote_jid}")
     except Exception as exc:
-        logger.error(f"Erro crítico: Falha ao enviar resposta via Evolution API para {phone}. Detalhes: {str(exc)}")
+        logger.error(f"Erro crítico: Falha ao enviar resposta via Evolution API para {remote_jid}. Detalhes: {str(exc)}")
 
 # ==================== ROUTES ====================
 
@@ -1810,23 +1828,30 @@ async def whatsapp_webhook(request: Request):
 
     if resolution["status"] == "awaiting_email":
         await _send_chatbot_whatsapp_message(
-            sender_phone,
+            remote_jid,
             "Olá! Sou o ELIOS. Ainda não reconheço este número. Por favor, digite o seu e-mail de cadastro para começarmos.",
         )
         return {"status": "ok", "reason": "awaiting_email"}
 
     if resolution["status"] == "email_not_found":
         await _send_chatbot_whatsapp_message(
-            sender_phone,
+            remote_jid,
             "Não encontrei este e-mail no seu cadastro. Por favor, confira e envie novamente.",
         )
         return {"status": "ok", "reason": "email_not_found"}
+
+    if resolution["status"] == "email_already_linked_elsewhere":
+        await _send_chatbot_whatsapp_message(
+            remote_jid,
+            "Este e-mail já está vinculado a outro número de WhatsApp. Para sua segurança, solicite ao suporte/admin a atualização do vínculo.",
+        )
+        return {"status": "ok", "reason": "email_already_linked_elsewhere"}
 
     if resolution["status"] == "linked_now":
         user_name = _first_name(resolution["user"].get("full_name", ""))
         greeting = f"Perfeito, {user_name}! Identifiquei o seu cadastro. Como posso ajudar hoje?" if user_name else "Perfeito! Identifiquei o seu cadastro. Como posso ajudar hoje?"
         await _send_chatbot_whatsapp_message(
-            sender_phone,
+            remote_jid,
             greeting,
         )
         return {"status": "ok", "reason": "linked_now"}
@@ -1835,7 +1860,7 @@ async def whatsapp_webhook(request: Request):
     logger.info("Webhook: Iniciando processamento para o mentorado ID: %s (LID: %s)", user["id"], remote_jid)
     ai_response = await chat_with_elios(user["id"], incoming_message)
 
-    await _send_chatbot_whatsapp_message(sender_phone, ai_response)
+    await _send_chatbot_whatsapp_message(remote_jid, ai_response)
     return {"status": "ok", "reason": "linked"}
 
 
@@ -1892,28 +1917,34 @@ async def whatsapp_messages_upsert_webhook(request: Request):
     resolution = await _resolve_whatsapp_user_by_identity(remote_jid, incoming_message)
     if resolution["status"] == "awaiting_email":
         await _send_chatbot_whatsapp_message(
-            sender_phone,
+            remote_jid,
             "Olá! Sou o ELIOS. Ainda não reconheço este número. Por favor, digite o seu e-mail de cadastro para começarmos.",
         )
         return {"status": "ok", "reason": "awaiting_email"}
     if resolution["status"] == "email_not_found":
         await _send_chatbot_whatsapp_message(
-            sender_phone,
+            remote_jid,
             "Não encontrei este e-mail no seu cadastro. Por favor, confira e envie novamente.",
         )
         return {"status": "ok", "reason": "email_not_found"}
+    if resolution["status"] == "email_already_linked_elsewhere":
+        await _send_chatbot_whatsapp_message(
+            remote_jid,
+            "Este e-mail já está vinculado a outro número de WhatsApp. Para sua segurança, solicite ao suporte/admin a atualização do vínculo.",
+        )
+        return {"status": "ok", "reason": "email_already_linked_elsewhere"}
     if resolution["status"] == "linked_now":
         user_name = _first_name(resolution["user"].get("full_name", ""))
         greeting = f"Perfeito, {user_name}! Identifiquei o seu cadastro. Como posso ajudar hoje?" if user_name else "Perfeito! Identifiquei o seu cadastro. Como posso ajudar hoje?"
         await _send_chatbot_whatsapp_message(
-            sender_phone,
+            remote_jid,
             greeting,
         )
         return {"status": "ok", "reason": "linked_now"}
 
     user = resolution["user"]
     ai_response = await chat_with_elios(user["id"], incoming_message)
-    await _send_chatbot_whatsapp_message(sender_phone, ai_response)
+    await _send_chatbot_whatsapp_message(remote_jid, ai_response)
     return {"status": "ok", "reason": "linked"}
 
 # ---- AUTH ROUTES ----
@@ -2230,14 +2261,54 @@ async def update_user(user_id: str, update: UserUpdate, admin: dict = Depends(ge
         existing = await db.users.find_one({"email": update_dict["email"], "id": {"$ne": user_id}})
         if existing:
             raise HTTPException(status_code=400, detail="Email já cadastrado")
-    
+    current_user = await db.users.find_one({"id": user_id}, {"_id": 0, "id": 1, "email": 1})
+    if not current_user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+    email_changed = (
+        "email" in update_dict
+        and isinstance(current_user.get("email"), str)
+        and current_user.get("email", "").strip().lower() != update_dict["email"].strip().lower()
+    )
+
     result = await db.users.update_one(
         {"id": user_id},
         {"$set": update_dict}
     )
-    
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+    if email_changed:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        linked_identities = await db.whatsapp_identity_resolution.find(
+            {"user_id": user_id},
+            {"_id": 0, "lid": 1, "email": 1},
+        ).to_list(200)
+
+        if linked_identities:
+            history_docs = []
+            for identity in linked_identities:
+                lid = identity.get("lid")
+                if not isinstance(lid, str) or not lid.strip():
+                    continue
+                history_docs.append(
+                    {
+                        "id": str(uuid.uuid4()),
+                        "user_id": user_id,
+                        "lid": lid,
+                        "email": identity.get("email", current_user.get("email", "")),
+                        "event": "link_reset_email_changed",
+                        "source": "admin_user_update",
+                        "created_at": now_iso,
+                        "metadata": {
+                            "previous_email": current_user.get("email", ""),
+                            "new_email": update_dict["email"],
+                            "admin_id": admin.get("id"),
+                        },
+                    }
+                )
+            if history_docs:
+                await db.whatsapp_identity_history.insert_many(history_docs)
+
+        await db.whatsapp_identity_resolution.delete_many({"user_id": user_id})
     
     return {"message": "Usuário atualizado com sucesso"}
 

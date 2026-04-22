@@ -15,13 +15,17 @@ def format_phone_for_whatsapp(phone: str) -> str:
     return clean
 
 
-async def send_whatsapp_text(clean_phone: str, text: str):
+async def send_whatsapp_text(recipient: str, text: str):
+    target = (recipient or "").strip()
+    if "@" not in target:
+        target = format_phone_for_whatsapp(target)
+
     headers = {
         "apikey": EVOLUTION_API_KEY,
         "Content-Type": "application/json",
     }
     payload = {
-        "number": clean_phone,
+        "number": target,
         "text": text,
         "linkPreview": True,
     }
