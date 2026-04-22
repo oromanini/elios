@@ -22,13 +22,20 @@ import asyncio
 import requests
 import re
 import hashlib
+import httpx
 from PIL import Image, UnidentifiedImageError
 from bson import ObjectId
 from bson.errors import InvalidId
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from nps_scheduler import process_nps_cycles, process_nps_reminders
-from whatsapp_utils import EVOLUTION_API_KEY, format_phone_for_whatsapp, send_whatsapp_text
+from whatsapp_utils import (
+    EVOLUTION_API_KEY,
+    EVOLUTION_API_URL,
+    EVOLUTION_INSTANCE,
+    format_phone_for_whatsapp,
+    send_whatsapp_text,
+)
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -1245,7 +1252,115 @@ REGRAS DE ANÁLISE:
         )
 
 
-def _extract_whatsapp_sender(payload: Dict[str, Any]) -> str:
+async def _resolve_whatsapp_lid_sender(lid_jid: str) -> str:
+    normalized_lid = lid_jid.strip()
+    if not normalized_lid:
+        return ""
+
+    existing_user = await db.users.find_one(
+        {"whatsapp": normalized_lid},
+        {"_id": 0, "whatsapp": 1},
+    )
+    if existing_user and existing_user.get("whatsapp"):
+        return existing_user["whatsapp"]
+
+    identity_doc = await db.whatsapp_identity_resolution.find_one(
+        {"lid": normalized_lid},
+        {"_id": 0, "phone_jid": 1},
+    )
+    if identity_doc and isinstance(identity_doc.get("phone_jid"), str) and identity_doc["phone_jid"].strip():
+        return identity_doc["phone_jid"].strip()
+
+    headers = {
+        "apikey": EVOLUTION_API_KEY,
+        "Content-Type": "application/json",
+    }
+    endpoint = f"{EVOLUTION_API_URL}/chat/findContacts/{EVOLUTION_INSTANCE}"
+    payload = {
+        "where": {
+            "id": normalized_lid,
+        }
+    }
+    resolved_phone_jid = ""
+
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            response = await client.post(endpoint, headers=headers, json=payload)
+            response.raise_for_status()
+            response_data = response.json()
+    except Exception as exc:
+        logger.warning("Falha ao resolver LID '%s' via Evolution API: %s", normalized_lid, str(exc))
+        return normalized_lid
+
+    search_targets: List[Any] = []
+    if isinstance(response_data, dict):
+        search_targets.extend(
+            [
+                response_data.get("id"),
+                response_data.get("remoteJid"),
+                response_data.get("jid"),
+                response_data.get("chatId"),
+                response_data.get("number"),
+            ]
+        )
+        contacts = response_data.get("contacts")
+        if isinstance(contacts, list):
+            for contact in contacts:
+                if isinstance(contact, dict):
+                    search_targets.extend(
+                        [
+                            contact.get("id"),
+                            contact.get("remoteJid"),
+                            contact.get("jid"),
+                            contact.get("number"),
+                            contact.get("phone"),
+                        ]
+                    )
+    elif isinstance(response_data, list):
+        for item in response_data:
+            if isinstance(item, dict):
+                search_targets.extend(
+                    [
+                        item.get("id"),
+                        item.get("remoteJid"),
+                        item.get("jid"),
+                        item.get("number"),
+                        item.get("phone"),
+                    ]
+                )
+
+    for candidate in search_targets:
+        if isinstance(candidate, str) and "@s.whatsapp.net" in candidate:
+            resolved_phone_jid = candidate.strip()
+            break
+
+    if not resolved_phone_jid:
+        for candidate in search_targets:
+            if isinstance(candidate, str):
+                digits_only = re.sub(r"\D", "", candidate)
+                if len(digits_only) >= 8:
+                    resolved_phone_jid = f"{digits_only}@s.whatsapp.net"
+                    break
+
+    if not resolved_phone_jid:
+        return normalized_lid
+
+    await db.whatsapp_identity_resolution.update_one(
+        {"lid": normalized_lid},
+        {
+            "$set": {
+                "lid": normalized_lid,
+                "phone_jid": resolved_phone_jid,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+        },
+        upsert=True,
+    )
+
+    return resolved_phone_jid
+
+
+async def _extract_whatsapp_sender(payload: Dict[str, Any]) -> str:
     data = payload.get("data", {}) if isinstance(payload, dict) and isinstance(payload.get("data"), dict) else {}
     key = data.get("key", {}) if isinstance(data.get("key"), dict) else {}
 
@@ -1262,8 +1377,14 @@ def _extract_whatsapp_sender(payload: Dict[str, Any]) -> str:
             return stripped_value
         return ""
 
+    async def _resolve_if_lid(value: str) -> str:
+        normalized_value = value.strip()
+        if normalized_value.endswith("@lid"):
+            return await _resolve_whatsapp_lid_sender(normalized_value)
+        return normalized_value
+
     if isinstance(remote_jid, str) and "@g.us" in remote_jid and isinstance(participant, str) and participant.strip():
-        return participant.strip()
+        return await _resolve_if_lid(participant)
 
     is_lid_sender = isinstance(remote_jid, str) and "@lid" in remote_jid
 
@@ -1271,11 +1392,10 @@ def _extract_whatsapp_sender(payload: Dict[str, Any]) -> str:
         return remote_jid.strip()
 
     if isinstance(participant, str) and participant.strip():
-        return participant.strip()
+        return await _resolve_if_lid(participant)
 
     if is_lid_sender:
         sender_candidates = [
-            data.get("sender"),
             data.get("senderJid"),
             data.get("senderLid"),
             data.get("from"),
@@ -1303,7 +1423,7 @@ def _extract_whatsapp_sender(payload: Dict[str, Any]) -> str:
         for candidate in sender_candidates:
             extracted_candidate = _extract_phone_candidate(candidate)
             if extracted_candidate:
-                return extracted_candidate
+                return await _resolve_if_lid(extracted_candidate)
 
     return ""
 
@@ -1394,7 +1514,7 @@ async def whatsapp_webhook(request: Request):
     if payload_key.get("fromMe") is True:
         return {"status": "ignored", "reason": "self_message"}
 
-    sender_raw = _extract_whatsapp_sender(payload_dict)
+    sender_raw = await _extract_whatsapp_sender(payload_dict)
     incoming_message = _extract_whatsapp_message(payload_dict)
     logger.info("Processamento: Sender Bruto='%s' | Msg='%s...'", sender_raw, incoming_message[:50])
 
