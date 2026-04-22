@@ -43,10 +43,14 @@ JWT_ALGORITHM = "HS256"
 JWT_EXP_HOURS = int(os.environ.get("JWT_EXP_HOURS", "12"))
 JWT_COOKIE_NAME = os.environ.get("JWT_COOKIE_NAME", "elios_token")
 JWT_COOKIE_MAX_AGE = JWT_EXP_HOURS * 3600
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+def normalize_origin(origin: str) -> str:
+    return origin.strip().rstrip("/")
+
+
+FRONTEND_URL = normalize_origin(os.getenv("FRONTEND_URL", "http://localhost:3000"))
 
 raw_cors = os.getenv("CORS_ORIGINS", FRONTEND_URL)
-CORS_ORIGINS = [origin.strip() for origin in raw_cors.split(",") if origin.strip()]
+CORS_ORIGINS = [normalize_origin(origin) for origin in raw_cors.split(",") if origin.strip()]
 if not CORS_ORIGINS:
     CORS_ORIGINS = [FRONTEND_URL]
 if FRONTEND_URL not in CORS_ORIGINS:
