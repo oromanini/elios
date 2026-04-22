@@ -27,7 +27,7 @@ from bson import ObjectId
 from bson.errors import InvalidId
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from nps_scheduler import process_nps_cycles
+from nps_scheduler import process_nps_cycles, process_nps_reminders
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -2327,6 +2327,13 @@ async def trigger_nps_for_user(
     return {"message": "Processamento manual de NPS executado com sucesso para o utilizador.", "force": force}
 
 
+@nps_router.post("/trigger-reminders")
+async def trigger_nps_reminders(admin: dict = Depends(get_admin_user)):
+    _ = admin
+    await process_nps_reminders(db)
+    return {"message": "Processamento manual de lembretes NPS executado com sucesso."}
+
+
 # Include the router in the main app
 app.include_router(api_router)
 app.include_router(nps_router)
@@ -2348,6 +2355,15 @@ async def startup_scheduler():
         minute=0,
         args=[db],
         id="nps_daily_cron",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        process_nps_reminders,
+        "cron",
+        hour=14,
+        minute=0,
+        args=[db],
+        id="nps_reminders_daily_cron",
         replace_existing=True,
     )
     if not scheduler.running:

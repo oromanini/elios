@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../co
 import { Button } from '../components/ui/button';
 import { Label } from '../components/ui/label';
 import { Skeleton } from '../components/ui/skeleton';
+import { Badge } from '../components/ui/badge';
 import api from '../services/api';
 
 const SCORE_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -150,7 +151,19 @@ const NPSFillPage = () => {
               {pendingEvaluations.map((evaluation, index) => (
                 <div key={evaluation.goal_id} className="rounded-lg border border-white/10 bg-black/20 p-4 md:p-5">
                   <Label className="text-sm text-slate-400">Meta {index + 1}</Label>
-                  <p className="mt-1 mb-4 text-white font-medium">{evaluation.goal_title}</p>
+                  <div className="mt-1 mb-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-white font-medium">{evaluation.goal_title}</p>
+                      {evaluation.goal_pillar ? (
+                        <Badge variant="secondary" className="bg-indigo-500/20 text-indigo-100 border border-indigo-400/30">
+                          {evaluation.goal_pillar}
+                        </Badge>
+                      ) : null}
+                    </div>
+                    {evaluation.goal_description ? (
+                      <p className="mt-1 text-sm text-slate-300 italic">{evaluation.goal_description}</p>
+                    ) : null}
+                  </div>
 
                   <div className="grid grid-cols-5 md:grid-cols-10 gap-2">
                     {SCORE_OPTIONS.map((score) => {

@@ -51,10 +51,13 @@ const NpsHistory = () => {
   }, []);
 
   const chartData = useMemo(
-    () => history.filter((item) => item.status === 'completed' && typeof item.average_score === 'number').map((item) => ({
-      cycle: item.cycle,
-      score: item.average_score
-    })),
+    () => history
+      .slice()
+      .sort((a, b) => Number(a.cycle || 0) - Number(b.cycle || 0))
+      .map((item) => ({
+        cycle: Number(item.cycle || 0),
+        score: typeof item.average_score === 'number' ? item.average_score : null,
+      })),
     [history]
   );
 
@@ -74,7 +77,7 @@ const NpsHistory = () => {
           </Card>
         ) : (
           <>
-            {chartData.length > 1 && (
+            {chartData.length > 0 && (
               <Card className="border-gray-800 bg-gray-900">
                 <CardHeader>
                   <CardTitle className="text-white flex items-center gap-2">
@@ -86,7 +89,12 @@ const NpsHistory = () => {
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={chartData}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                        <XAxis dataKey="cycle" stroke="#9CA3AF" tickLine={false} />
+                        <XAxis
+                          dataKey="cycle"
+                          stroke="#9CA3AF"
+                          tickLine={false}
+                          tickFormatter={(value) => `C${value}`}
+                        />
                         <YAxis domain={[0, 10]} stroke="#9CA3AF" tickLine={false} />
                         <Tooltip
                           contentStyle={{ backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 8 }}
