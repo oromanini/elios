@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { Send, Loader2 } from 'lucide-react';
+import { Send, Loader2, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 import Layout from '../components/Layout';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Skeleton } from '../components/ui/skeleton';
+import { Badge } from '../components/ui/badge';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import api from '../services/api';
 
 const statusStyles = {
@@ -48,6 +50,10 @@ const AdminNpsDashboard = () => {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [triggeringUserId, setTriggeringUserId] = useState('');
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [selectedStudent, setSelectedStudent] = useState(null);
+  const [lastNpsDetails, setLastNpsDetails] = useState(null);
 
   const loadOverview = async () => {
     setLoading(true);
@@ -81,6 +87,24 @@ const AdminNpsDashboard = () => {
     }
   };
 
+  const handleOpenDetails = async (userId, fullName) => {
+    setSelectedStudent({ userId, fullName });
+    setLastNpsDetails(null);
+    setDetailsLoading(true);
+    setDetailsOpen(true);
+
+    try {
+      const response = await api.get(`/nps/history/${userId}`);
+      const history = response.data || [];
+      setLastNpsDetails(history[0] || null);
+    } catch (error) {
+      toast.error('Não foi possível carregar os detalhes do último NPS.');
+      setLastNpsDetails(null);
+    } finally {
+      setDetailsLoading(false);
+    }
+  };
+
   return (
     <Layout>
       <div className="space-y-6" data-testid="admin-nps-dashboard-page">
@@ -102,7 +126,7 @@ const AdminNpsDashboard = () => {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[740px] text-sm">
+                <table className="w-full min-w-[780px] text-sm">
                   <thead>
                     <tr className="border-b border-gray-800 text-gray-400 text-left">
                       <th className="px-3 py-3 font-medium">Mentorando</th>
@@ -129,15 +153,26 @@ const AdminNpsDashboard = () => {
                           </td>
                           <td className="px-3 py-3 text-gray-300">{formatDate(item.last_nps_date)}</td>
                           <td className="px-3 py-3">
-                            <Button
-                              size="sm"
-                              className="bg-indigo-600 hover:bg-indigo-500 text-white"
-                              onClick={() => handleTrigger(item.user_id, item.full_name)}
-                              disabled={isTriggering}
-                            >
-                              {isTriggering ? <Loader2 size={16} className="mr-1 animate-spin" /> : <Send size={16} className="mr-1" />}
-                              Disparar NPS
-                            </Button>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                size="icon"
+                                variant="outline"
+                                className="border-white/20 bg-white/5 text-slate-200 hover:bg-white/10"
+                                onClick={() => handleOpenDetails(item.user_id, item.full_name)}
+                                aria-label={`Ver detalhes do último NPS de ${item.full_name}`}
+                              >
+                                <Eye size={16} />
+                              </Button>
+                              <Button
+                                size="sm"
+                                className="bg-indigo-600 hover:bg-indigo-500 text-white"
+                                onClick={() => handleTrigger(item.user_id, item.full_name)}
+                                disabled={isTriggering}
+                              >
+                                {isTriggering ? <Loader2 size={16} className="mr-1 animate-spin" /> : <Send size={16} className="mr-1" />}
+                                Disparar NPS
+                              </Button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -148,6 +183,48 @@ const AdminNpsDashboard = () => {
             )}
           </CardContent>
         </Card>
+
+        <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
+          <DialogContent className="glass-card border-white/10 sm:max-w-2xl">
+            <DialogHeader>
+              <DialogTitle className="text-white">
+                Último NPS de {selectedStudent?.fullName || 'mentorando'}
+              </DialogTitle>
+              <DialogDescription className="text-slate-300">
+                Pilar, meta e nota atribuída no último check-in.
+              </DialogDescription>
+            </DialogHeader>
+
+            {detailsLoading ? (
+              <div className="space-y-3">
+                {[1, 2, 3].map((item) => (
+                  <Skeleton key={`nps-details-skeleton-${item}`} className="h-20 w-full bg-white/10" />
+                ))}
+              </div>
+            ) : !lastNpsDetails ? (
+              <div className="rounded-lg border border-white/10 bg-black/20 px-4 py-6 text-center text-slate-300">
+                Nenhum NPS encontrado para este mentorando.
+              </div>
+            ) : (
+              <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+                {lastNpsDetails.evaluations?.map((evaluation) => (
+                  <div key={evaluation.goal_id} className="rounded-lg border border-white/10 bg-gray-800/50 p-4">
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                      <Badge className="border border-blue-400/30 bg-blue-950/70 text-blue-200">
+                        {evaluation.goal_pillar || 'Sem pilar'}
+                      </Badge>
+                      <span className="rounded-md border border-emerald-400/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-200">
+                        Nota: {evaluation.score ?? '—'}
+                      </span>
+                    </div>
+                    <p className="text-sm font-medium text-white">{evaluation.goal_title || 'Meta sem título'}</p>
+                    <p className="mt-1 text-xs italic text-slate-300">{evaluation.goal_description || 'Sem descrição informada.'}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </Layout>
   );

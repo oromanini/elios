@@ -153,15 +153,15 @@ const NPSFillPage = () => {
                   <Label className="text-sm text-slate-400">Meta {index + 1}</Label>
                   <div className="mt-1 mb-4">
                     <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-white font-medium">{evaluation.goal_title}</p>
                       {evaluation.goal_pillar ? (
-                        <Badge variant="secondary" className="bg-indigo-500/20 text-indigo-100 border border-indigo-400/30">
+                        <Badge variant="secondary" className="border border-blue-400/30 bg-blue-950/70 text-blue-200">
                           {evaluation.goal_pillar}
                         </Badge>
                       ) : null}
+                      <p className="text-white font-medium">{evaluation.goal_title}</p>
                     </div>
                     {evaluation.goal_description ? (
-                      <p className="mt-1 text-sm text-slate-300 italic">{evaluation.goal_description}</p>
+                      <p className="mt-1 text-xs text-slate-400 italic">{evaluation.goal_description}</p>
                     ) : null}
                   </div>
 
