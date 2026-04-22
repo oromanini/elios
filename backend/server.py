@@ -1296,8 +1296,9 @@ async def _send_chatbot_whatsapp_message(phone: str, text: str):
 
     try:
         await send_whatsapp_text(clean_phone, text)
+        logger.info(f"Resposta do ELIOS enviada com sucesso para {phone}")
     except Exception as exc:
-        logger.warning("Falha ao enviar resposta do chatbot para %s: %s", phone, exc)
+        logger.error(f"Erro crítico: Falha ao enviar resposta via Evolution API para {phone}. Detalhes: {str(exc)}")
 
 # ==================== ROUTES ====================
 
@@ -1338,8 +1339,10 @@ async def whatsapp_webhook(request: Request):
         user = await db.users.find_one({"whatsapp": {"$regex": f"{sender_phone}$"}}, {"_id": 0, "id": 1})
 
     if not user or not user.get("id"):
+        logger.info(f"Webhook: Mensagem ignorada. Telefone {sender_phone} não está associado a nenhum mentorado.")
         return {"status": "ignored", "reason": "unknown_user"}
 
+    logger.info(f"Webhook: Iniciando processamento para o mentorado ID: {user['id']} (Telefone: {sender_phone})")
     ai_response = await chat_with_elios(user["id"], incoming_message)
 
     await _send_chatbot_whatsapp_message(sender_phone, ai_response)
