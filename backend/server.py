@@ -22,6 +22,7 @@ import asyncio
 import requests
 import re
 import hashlib
+import unicodedata
 import httpx
 from PIL import Image, UnidentifiedImageError
 from bson import ObjectId
@@ -1265,13 +1266,6 @@ async def _resolve_whatsapp_lid_sender(lid_jid: str) -> str:
     if existing_user and existing_user.get("whatsapp"):
         return existing_user["whatsapp"]
 
-    identity_doc = await db.whatsapp_identity_resolution.find_one(
-        {"lid": normalized_lid},
-        {"_id": 0, "phone_jid": 1},
-    )
-    if identity_doc and isinstance(identity_doc.get("phone_jid"), str) and identity_doc["phone_jid"].strip():
-        return identity_doc["phone_jid"].strip()
-
     headers = {
         "apikey": EVOLUTION_API_KEY,
         "Content-Type": "application/json",
@@ -1293,7 +1287,7 @@ async def _resolve_whatsapp_lid_sender(lid_jid: str) -> str:
             logger.info(f"DEBUG RESOLUÇÃO LID {normalized_lid}: {json.dumps(response_data)}")
     except Exception as exc:
         logger.warning("Falha ao resolver LID '%s' via Evolution API: %s", normalized_lid, str(exc))
-        return normalized_lid
+        response_data = {}
 
     search_targets: List[Any] = []
     if isinstance(response_data, dict):
@@ -1352,6 +1346,14 @@ async def _resolve_whatsapp_lid_sender(lid_jid: str) -> str:
                     break
 
     if not resolved_phone_jid:
+        identity_doc = await db.whatsapp_identity_resolution.find_one(
+            {"lid": normalized_lid},
+            {"_id": 0, "phone_jid": 1},
+        )
+        if identity_doc and isinstance(identity_doc.get("phone_jid"), str) and identity_doc["phone_jid"].strip():
+            return identity_doc["phone_jid"].strip()
+
+    if not resolved_phone_jid:
         return normalized_lid
 
     await db.whatsapp_identity_resolution.update_one(
@@ -1367,6 +1369,96 @@ async def _resolve_whatsapp_lid_sender(lid_jid: str) -> str:
     )
 
     return resolved_phone_jid
+
+
+def normalize_whatsapp_name(name: Any) -> str:
+    if not isinstance(name, str):
+        return ""
+    decomposed = unicodedata.normalize("NFKD", name)
+    without_marks = "".join(char for char in decomposed if not unicodedata.combining(char))
+    cleaned_chars: List[str] = []
+    for char in without_marks:
+        category = unicodedata.category(char)
+        if category.startswith(("L", "N")) or char in {" ", "-", "_", ".", "'"}:
+            cleaned_chars.append(char)
+            continue
+        if category == "Zs":
+            cleaned_chars.append(" ")
+    cleaned = re.sub(r"\s+", " ", "".join(cleaned_chars)).strip()
+    return cleaned
+
+
+def _build_phone_jid(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    if "@s.whatsapp.net" in value:
+        digits = re.sub(r"\D", "", value)
+        return f"{digits}@s.whatsapp.net" if digits else ""
+    digits = re.sub(r"\D", "", value)
+    if 8 <= len(digits) <= 15:
+        return f"{digits}@s.whatsapp.net"
+    return ""
+
+
+async def sync_whatsapp_identities() -> int:
+    headers = {
+        "apikey": EVOLUTION_API_KEY,
+        "Content-Type": "application/json",
+    }
+    endpoint = f"{EVOLUTION_API_URL}/contacts/fetchContacts/{EVOLUTION_INSTANCE}"
+    processed_count = 0
+
+    async with httpx.AsyncClient(timeout=40.0) as client:
+        response = await client.post(endpoint, headers=headers, json={})
+        response.raise_for_status()
+        response_data = response.json()
+
+    contacts: List[Dict[str, Any]] = []
+    if isinstance(response_data, list):
+        contacts = [item for item in response_data if isinstance(item, dict)]
+    elif isinstance(response_data, dict):
+        for key in ("contacts", "data", "result"):
+            value = response_data.get(key)
+            if isinstance(value, list):
+                contacts = [item for item in value if isinstance(item, dict)]
+                if contacts:
+                    break
+
+    if not contacts:
+        logger.info("Sincronização de identidades WhatsApp: nenhum contato retornado.")
+        return 0
+
+    for contact in contacts:
+        lid = (contact.get("id") or "").strip() if isinstance(contact.get("id"), str) else ""
+        if not lid:
+            continue
+        phone_jid = _build_phone_jid(contact.get("number") or contact.get("phone") or "")
+        if not phone_jid:
+            continue
+        push_name = normalize_whatsapp_name(contact.get("pushName") or contact.get("name") or "")
+        await db.whatsapp_identity_resolution.update_one(
+            {"lid": lid},
+            {
+                "$set": {
+                    "lid": lid,
+                    "phone_jid": phone_jid,
+                    "push_name": push_name,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }
+            },
+            upsert=True,
+        )
+        processed_count += 1
+
+    logger.info("Sincronização de identidades WhatsApp concluída: %s contatos processados.", processed_count)
+    return processed_count
+
+
+async def _run_whatsapp_identity_sync_task() -> None:
+    try:
+        await sync_whatsapp_identities()
+    except Exception as exc:
+        logger.error("Erro na sincronização de identidades WhatsApp em background: %s", str(exc))
 
 
 async def _extract_whatsapp_sender(payload: Dict[str, Any]) -> str:
@@ -2543,6 +2635,16 @@ async def reset_elios_prompt(admin: dict = Depends(get_admin_user)):
     """Reset ELIOS prompt to default"""
     await db.system_config.delete_one({"key": "elios_prompt"})
     return {"message": "Prompt resetado para o padrão", "prompt": DEFAULT_ELIOS_PROMPT}
+
+
+@api_router.post("/admin/whatsapp/sync-contacts")
+async def trigger_whatsapp_contacts_sync(
+    background_tasks: BackgroundTasks,
+    admin: dict = Depends(get_admin_user),
+):
+    _ = admin
+    background_tasks.add_task(_run_whatsapp_identity_sync_task)
+    return {"message": "Sincronização de contatos do WhatsApp iniciada em background."}
 
 # ---- DASHBOARD ROUTES ----
 
