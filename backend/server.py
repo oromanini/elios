@@ -1245,17 +1245,6 @@ REGRAS DE ANÁLISE:
         )
 
 
-def _extract_webhook_token(request: Request) -> str:
-    # Tenta extrair de headers comuns ou de parâmetros de URL
-    token = (
-        request.headers.get("apikey")
-        or request.headers.get("x-api-key")
-        or request.query_params.get("apikey")
-        or request.query_params.get("token")
-    )
-    return token.strip() if isinstance(token, str) else ""
-
-
 def _extract_whatsapp_sender(payload: Dict[str, Any]) -> str:
     data = payload.get("data", {}) if isinstance(payload, dict) and isinstance(payload.get("data"), dict) else {}
     key = data.get("key", {}) if isinstance(data.get("key"), dict) else {}
@@ -1323,10 +1312,6 @@ async def whatsapp_webhook(request: Request):
         logger.error("Webhook WhatsApp rejeitado: EVOLUTION_API_KEY não configurada.")
         raise HTTPException(status_code=503, detail="Webhook de WhatsApp indisponível.")
 
-    received_token = _extract_webhook_token(request)
-    if not received_token or not secrets.compare_digest(received_token, EVOLUTION_API_KEY):
-        raise HTTPException(status_code=401, detail="Token de webhook inválido.")
-
     try:
         payload = await request.json()
     except Exception:
@@ -1352,13 +1337,10 @@ async def whatsapp_webhook(request: Request):
     if not user:
         user = await db.users.find_one({"whatsapp": {"$regex": f"{sender_phone}$"}}, {"_id": 0, "id": 1})
 
-    if user and user.get("id"):
-        ai_response = await chat_with_elios(user["id"], incoming_message)
-    else:
-        ai_response = (
-            "Olá! Eu sou o ELIOS 🤖. Ainda não encontrei o seu cadastro. "
-            "Conheça o Programa Elite e faça sua inscrição para receber acompanhamento personalizado."
-        )
+    if not user or not user.get("id"):
+        return {"status": "ignored", "reason": "unknown_user"}
+
+    ai_response = await chat_with_elios(user["id"], incoming_message)
 
     await _send_chatbot_whatsapp_message(sender_phone, ai_response)
     return {"status": "ok"}
