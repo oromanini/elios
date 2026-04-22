@@ -5,7 +5,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
-import { Textarea } from '../components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '../components/ui/alert-dialog';
@@ -51,7 +50,6 @@ const MetasPage = () => {
   const [formData, setFormData] = useState({
     pillar: '',
     title: '',
-    description: '',
     status: 'active'
   });
 
@@ -135,7 +133,6 @@ const MetasPage = () => {
     setFormData({
       pillar: goal.pillar,
       title: goal.title,
-      description: goal.description,
       status: goal.status
     });
     setDialogOpen(true);
@@ -147,7 +144,6 @@ const MetasPage = () => {
     setFormData({
       pillar: '',
       title: '',
-      description: '',
       status: 'active'
     });
   };
@@ -335,10 +331,6 @@ const MetasPage = () => {
                     <h3 className="font-semibold text-white text-lg mb-2 line-clamp-1">
                       {goal.title}
                     </h3>
-                    <p className="text-slate-400 text-sm line-clamp-3 mb-4">
-                      {goal.description}
-                    </p>
-
                     <div className="flex items-center justify-between pt-3 border-t border-white/10">
                       {goal.target_date && (
                         <span className="text-xs text-slate-500">
@@ -396,24 +388,13 @@ const MetasPage = () => {
               </div>
 
               <div className="space-y-2">
-                <Label className="text-slate-400">Título *</Label>
+                <Label className="text-slate-400">Descrição da Meta *</Label>
                 <Input
                   value={formData.title}
                   onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
-                  placeholder="Ex: Ler 12 livros este ano"
+                  placeholder="Ex: Ler 2 livros por mês"
                   className="bg-slate-900/50 border-slate-700 text-white"
                   data-testid="goal-title"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-slate-400">Descrição</Label>
-                <Textarea
-                  value={formData.description}
-                  onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                  placeholder="Descreva sua meta em detalhes..."
-                  className="bg-slate-900/50 border-slate-700 text-white min-h-[100px]"
-                  data-testid="goal-description"
                 />
               </div>
 

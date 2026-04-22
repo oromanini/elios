@@ -274,7 +274,7 @@ class FormSubmission(BaseModel):
 class GoalCreate(BaseModel):
     pillar: str
     title: str
-    description: str
+    description: Optional[str] = None
     target_date: Optional[str] = None
 
 class GoalUpdate(BaseModel):
@@ -289,7 +289,7 @@ class GoalResponse(BaseModel):
     user_id: str
     pillar: str
     title: str
-    description: str
+    description: Optional[str] = None
     target_date: Optional[str] = None
     status: str = "active"
     created_at: str
@@ -363,7 +363,7 @@ class AnalyzeResponseRequest(BaseModel):
 class DetectedGoal(BaseModel):
     pillar: str
     title: str
-    description: str
+    description: Optional[str] = None
 
 class AnalyzeResponseResult(BaseModel):
     feedback: str
@@ -1045,7 +1045,8 @@ def build_analytical_objectives(
 ) -> List[str]:
     """Return concise SMART-like objectives, avoiding objective text that mirrors the original answer."""
     normalized_answer = (answer or "").strip().lower()
-    objective_candidates = [goal.description.strip() for goal in detected_goals if goal.description.strip()]
+    objective_candidates = [goal.description.strip() for goal in detected_goals if goal.description and goal.description.strip()]
+    objective_candidates.extend([goal.title.strip() for goal in detected_goals if goal.title and goal.title.strip()])
     objective_candidates.extend([item.strip() for item in fallback_objectives if item and item.strip()])
 
     cleaned_objectives: List[str] = []
@@ -1117,7 +1118,7 @@ Retorne SOMENTE JSON válido com este formato:
   "objectives": ["meta objetiva 1", "meta objetiva 2"],
   "is_satisfactory": true|false,
   "detected_goals": [
-    {"title": "meta curta", "description": "ação concreta com frequência ou prazo"}
+    {"title": "meta completa e acionável"}
   ]
 }
 
@@ -1125,7 +1126,8 @@ REGRAS DE ANÁLISE:
 1. SUBJETIVIDADE OBRIGATÓRIA: CITE o contexto específico da resposta do usuário no seu feedback. Prove que você leu. (Ex: se ele falou de "farmácia", mencione "o negócio").
 2. RIGOR: Se a resposta for genérica ("vou melhorar") sem especificar O QUE e QUANDO, retorne is_satisfactory=false.
 3. DETECTED_GOALS e OBJECTIVES: Só preencha se houver um verbo de ação claro + uma medida de tempo/quantidade. NUNCA copie o texto do usuário na íntegra.
-4. FEEDBACK: Máximo de 3 linhas. Se is_satisfactory=false, dê um puxão de orelha apontando a falta de especificidade."""
+4. Em DETECTED_GOALS, retorne APENAS `title` com a frase completa da meta (única instrução). Não retorne `description`.
+5. FEEDBACK: Máximo de 3 linhas. Se is_satisfactory=false, dê um puxão de orelha apontando a falta de especificidade."""
 
     user_message = f"Pilar: {pillar}\nPergunta: {question}\nResposta do usuário: {answer}"
 
@@ -1153,13 +1155,11 @@ REGRAS DE ANÁLISE:
         detected_goals = []
         for goal in goals_payload:
             title = str(goal.get("title", "")).strip()
-            description = str(goal.get("description", "")).strip()
-            if title and description:
+            if title:
                 detected_goals.append(
                     DetectedGoal(
                         pillar=pillar,
-                        title=title,
-                        description=description
+                        title=title
                     )
                 )
 
@@ -1232,7 +1232,7 @@ REGRAS DE ANÁLISE:
             ),
             objectives=fallback_objectives,
             detected_goals=(
-                [DetectedGoal(pillar=pillar, title=f"Meta em {pillar}", description="Ação descrita no texto original.")]
+                [DetectedGoal(pillar=pillar, title=f"Definir uma meta acionável para {pillar} com frequência semanal.")]
                 if fallback_has_goal else []
             ),
             is_satisfactory=fallback_satisfactory,
@@ -1777,7 +1777,7 @@ async def submit_form(submission: FormSubmission = Depends(FormSubmission.as_for
             "user_id": user_id,
             "pillar": goal.pillar,
             "title": goal.title,
-            "description": goal.description,
+            "description": goal.description or "",
             "target_date": _get_current_cycle_deadline(user_doc["created_at"]),
             "status": "active",
             "is_deleted": False,
@@ -1898,7 +1898,7 @@ async def create_goal(goal: GoalCreate, user: dict = Depends(get_current_user)):
         "user_id": user["id"],
         "pillar": goal.pillar,
         "title": goal.title,
-        "description": goal.description,
+        "description": goal.description or "",
         "target_date": cycle_deadline,
         "status": "active",
         "is_deleted": False,

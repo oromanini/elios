@@ -160,9 +160,6 @@ const NPSFillPage = () => {
                       ) : null}
                       <p className="text-white font-medium">{evaluation.goal_title}</p>
                     </div>
-                    {evaluation.goal_description ? (
-                      <p className="mt-1 text-xs text-slate-400 italic">{evaluation.goal_description}</p>
-                    ) : null}
                   </div>
 
                   <div className="grid grid-cols-5 md:grid-cols-10 gap-2">
