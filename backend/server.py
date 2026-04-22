@@ -1246,7 +1246,15 @@ REGRAS DE ANÁLISE:
 
 
 def _extract_webhook_token(request: Request) -> str:
-    return request.headers.get("apikey") or ""
+    header_token = request.headers.get("apikey") or request.headers.get("x-api-key")
+    if isinstance(header_token, str) and header_token.strip():
+        return header_token.strip()
+
+    query_token = request.query_params.get("apikey") or request.query_params.get("token")
+    if isinstance(query_token, str) and query_token.strip():
+        return query_token.strip()
+
+    return ""
 
 
 def _extract_whatsapp_sender(payload: Dict[str, Any]) -> str:
@@ -1254,10 +1262,13 @@ def _extract_whatsapp_sender(payload: Dict[str, Any]) -> str:
     key = data.get("key", {}) if isinstance(data.get("key"), dict) else {}
 
     remote_jid = key.get("remoteJid")
+    if isinstance(remote_jid, str) and remote_jid.strip():
+        return remote_jid.strip()
+
     participant = key.get("participant")
-    for candidate in (remote_jid, participant):
-        if isinstance(candidate, str) and candidate.strip():
-            return candidate.strip()
+    if isinstance(participant, str) and participant.strip():
+        return participant.strip()
+
     return ""
 
 
@@ -1270,13 +1281,16 @@ def _extract_whatsapp_message(payload: Dict[str, Any]) -> str:
         else {}
     )
 
-    candidates = [
+    primary_candidates = [
         data_message.get("conversation"),
         extended_text.get("text"),
+    ]
+    fallback_candidates = [
         data.get("body"),
         payload.get("text") if isinstance(payload, dict) else None,
     ]
-    for candidate in candidates:
+
+    for candidate in [*primary_candidates, *fallback_candidates]:
         if isinstance(candidate, str) and candidate.strip():
             return candidate.strip()
     return ""
@@ -1318,8 +1332,15 @@ async def whatsapp_webhook(request: Request):
         payload = await request.json()
     except Exception:
         raise HTTPException(status_code=400, detail="Payload JSON inválido.")
-    sender_raw = _extract_whatsapp_sender(payload if isinstance(payload, dict) else {})
-    incoming_message = _extract_whatsapp_message(payload if isinstance(payload, dict) else {})
+
+    payload_dict = payload if isinstance(payload, dict) else {}
+    payload_data = payload_dict.get("data", {}) if isinstance(payload_dict.get("data"), dict) else {}
+    payload_key = payload_data.get("key", {}) if isinstance(payload_data.get("key"), dict) else {}
+    if payload_key.get("fromMe") is True:
+        return {"status": "ignored", "reason": "self_message"}
+
+    sender_raw = _extract_whatsapp_sender(payload_dict)
+    incoming_message = _extract_whatsapp_message(payload_dict)
 
     if not sender_raw or not incoming_message:
         return {"status": "ignored", "reason": "payload incompleto"}
