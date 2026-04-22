@@ -4,7 +4,7 @@ import os
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List
 
-from whatsapp_utils import _format_phone_for_whatsapp, _send_whatsapp_text
+from whatsapp_utils import format_phone_for_whatsapp, send_whatsapp_text
 
 EVOLUTION_API_KEY = os.environ.get("EVOLUTION_API_KEY", "")
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
@@ -16,7 +16,7 @@ async def send_whatsapp_nps_link(phone: str, nps_id: str, cycle: int):
         logger.warning("Envio de WhatsApp desativado: EVOLUTION_API_KEY não configurada.")
         return
 
-    clean_phone = _format_phone_for_whatsapp(phone)
+    clean_phone = format_phone_for_whatsapp(phone)
     if len(clean_phone) < 12:
         logger.warning("Envio de WhatsApp abortado: telefone inválido (%s).", phone)
         return
@@ -29,13 +29,13 @@ async def send_whatsapp_nps_link(phone: str, nps_id: str, cycle: int):
     )
     try:
         logger.info("Tentando enviar primeira mensagem de NPS para %s.", clean_phone)
-        await _send_whatsapp_text(clean_phone, first_text)
+        await send_whatsapp_text(clean_phone, first_text)
         logger.info("Primeira mensagem de NPS enviada para %s.", clean_phone)
 
         await asyncio.sleep(1)
 
         logger.info("Tentando enviar link de NPS para %s.", clean_phone)
-        await _send_whatsapp_text(clean_phone, link)
+        await send_whatsapp_text(clean_phone, link)
         logger.info("Link de NPS enviado para %s.", clean_phone)
     except Exception as exc:
         logger.warning("Falha ao enviar WhatsApp para %s: %s", phone, exc)
@@ -165,7 +165,7 @@ async def process_nps_reminders(db):
                 continue
 
             phone = user.get("phone") or user.get("whatsapp")
-            clean_phone = _format_phone_for_whatsapp(phone)
+            clean_phone = format_phone_for_whatsapp(phone)
             if not phone or len(clean_phone) < 12:
                 logger.info(
                     "Lembrete NPS ignorado para registro %s: telefone inválido.",
@@ -178,7 +178,7 @@ async def process_nps_reminders(db):
                 "ELIOS: Notámos que ainda não realizou o seu Check-in Mensal. "
                 f"É fundamental para a nossa mentoria. Link: {link}"
             )
-            await _send_whatsapp_text(clean_phone, reminder_text)
+            await send_whatsapp_text(clean_phone, reminder_text)
             await db.nps_records.update_one(
                 {"_id": record.get("_id")},
                 {"$set": {"reminder_sent": True, "reminder_sent_at": now}},

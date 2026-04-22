@@ -28,7 +28,7 @@ from bson.errors import InvalidId
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from nps_scheduler import process_nps_cycles, process_nps_reminders
-from whatsapp_utils import EVOLUTION_API_KEY, _format_phone_for_whatsapp, _send_whatsapp_text
+from whatsapp_utils import EVOLUTION_API_KEY, format_phone_for_whatsapp, send_whatsapp_text
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -90,7 +90,6 @@ LOGIN_ATTEMPTS: Dict[str, List[datetime]] = {}
 MAX_LOGIN_ATTEMPTS = int(os.environ.get("MAX_LOGIN_ATTEMPTS", "5"))
 LOGIN_WINDOW_MINUTES = int(os.environ.get("LOGIN_WINDOW_MINUTES", "15"))
 INIT_SETUP_TOKEN = os.environ.get("INIT_SETUP_TOKEN", "")
-WHATSAPP_WEBHOOK_TOKEN = os.environ.get("WHATSAPP_WEBHOOK_TOKEN", "")
 
 # Create the main app without a prefix
 app = FastAPI(title="ELIOS - Sistema de Performance Elite")
@@ -1247,54 +1246,35 @@ REGRAS DE ANÁLISE:
 
 
 def _extract_webhook_token(request: Request) -> str:
-    return (
-        request.headers.get("apikey")
-        or request.headers.get("x-api-key")
-        or request.headers.get("x-webhook-token")
-        or request.query_params.get("apikey")
-        or request.query_params.get("token")
-        or ""
-    )
+    return request.headers.get("apikey") or ""
 
 
 def _extract_whatsapp_sender(payload: Dict[str, Any]) -> str:
-    data = payload.get("data", {}) if isinstance(payload.get("data"), dict) else {}
-    key = payload.get("key", {}) if isinstance(payload.get("key"), dict) else {}
-    message = payload.get("message", {}) if isinstance(payload.get("message"), dict) else {}
+    data = payload.get("data", {}) if isinstance(payload, dict) and isinstance(payload.get("data"), dict) else {}
+    key = data.get("key", {}) if isinstance(data.get("key"), dict) else {}
 
-    candidates = [
-        payload.get("from"),
-        payload.get("sender"),
-        payload.get("remoteJid"),
-        data.get("from"),
-        data.get("sender"),
-        data.get("remoteJid"),
-        key.get("remoteJid"),
-        key.get("participant"),
-        message.get("from"),
-    ]
-    for candidate in candidates:
+    remote_jid = key.get("remoteJid")
+    participant = key.get("participant")
+    for candidate in (remote_jid, participant):
         if isinstance(candidate, str) and candidate.strip():
-            return candidate
+            return candidate.strip()
     return ""
 
 
 def _extract_whatsapp_message(payload: Dict[str, Any]) -> str:
-    data = payload.get("data", {}) if isinstance(payload.get("data"), dict) else {}
-    message = payload.get("message", {}) if isinstance(payload.get("message"), dict) else {}
-
-    extended_text = message.get("extendedTextMessage", {}) if isinstance(message.get("extendedTextMessage"), dict) else {}
-    conversation = message.get("conversation")
+    data = payload.get("data", {}) if isinstance(payload, dict) and isinstance(payload.get("data"), dict) else {}
     data_message = data.get("message", {}) if isinstance(data.get("message"), dict) else {}
-    data_extended = data_message.get("extendedTextMessage", {}) if isinstance(data_message.get("extendedTextMessage"), dict) else {}
+    extended_text = (
+        data_message.get("extendedTextMessage", {})
+        if isinstance(data_message.get("extendedTextMessage"), dict)
+        else {}
+    )
 
     candidates = [
-        payload.get("text"),
-        data.get("text"),
-        conversation,
-        extended_text.get("text"),
         data_message.get("conversation"),
-        data_extended.get("text"),
+        extended_text.get("text"),
+        data.get("body"),
+        payload.get("text") if isinstance(payload, dict) else None,
     ]
     for candidate in candidates:
         if isinstance(candidate, str) and candidate.strip():
@@ -1307,13 +1287,13 @@ async def _send_chatbot_whatsapp_message(phone: str, text: str):
         logger.warning("Envio de WhatsApp do chatbot desativado: EVOLUTION_API_KEY não configurada.")
         return
 
-    clean_phone = _format_phone_for_whatsapp(phone)
+    clean_phone = format_phone_for_whatsapp(phone)
     if len(clean_phone) < 12:
         logger.warning("Envio de WhatsApp do chatbot abortado: telefone inválido (%s).", phone)
         return
 
     try:
-        await _send_whatsapp_text(clean_phone, text)
+        await send_whatsapp_text(clean_phone, text)
     except Exception as exc:
         logger.warning("Falha ao enviar resposta do chatbot para %s: %s", phone, exc)
 
@@ -1326,12 +1306,12 @@ async def root():
 
 @api_router.post("/webhooks/whatsapp")
 async def whatsapp_webhook(request: Request):
-    if not WHATSAPP_WEBHOOK_TOKEN:
-        logger.error("Webhook WhatsApp rejeitado: WHATSAPP_WEBHOOK_TOKEN não configurado.")
+    if not EVOLUTION_API_KEY:
+        logger.error("Webhook WhatsApp rejeitado: EVOLUTION_API_KEY não configurada.")
         raise HTTPException(status_code=503, detail="Webhook de WhatsApp indisponível.")
 
     received_token = _extract_webhook_token(request)
-    if not secrets.compare_digest(received_token, WHATSAPP_WEBHOOK_TOKEN):
+    if not received_token or not secrets.compare_digest(received_token, EVOLUTION_API_KEY):
         raise HTTPException(status_code=401, detail="Token de webhook inválido.")
 
     try:
@@ -1344,7 +1324,7 @@ async def whatsapp_webhook(request: Request):
     if not sender_raw or not incoming_message:
         return {"status": "ignored", "reason": "payload incompleto"}
 
-    sender_phone = _format_phone_for_whatsapp(sender_raw)
+    sender_phone = format_phone_for_whatsapp(sender_raw)
     if len(sender_phone) < 12:
         return {"status": "ignored", "reason": "telefone inválido"}
 
