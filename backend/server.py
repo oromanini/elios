@@ -1250,10 +1250,14 @@ def _extract_whatsapp_sender(payload: Dict[str, Any]) -> str:
     key = data.get("key", {}) if isinstance(data.get("key"), dict) else {}
 
     remote_jid = key.get("remoteJid")
+    participant = key.get("participant")
+
+    if isinstance(remote_jid, str) and "@g.us" in remote_jid and isinstance(participant, str) and participant.strip():
+        return participant.strip()
+
     if isinstance(remote_jid, str) and remote_jid.strip():
         return remote_jid.strip()
 
-    participant = key.get("participant")
     if isinstance(participant, str) and participant.strip():
         return participant.strip()
 
@@ -1282,6 +1286,19 @@ def _extract_whatsapp_message(payload: Dict[str, Any]) -> str:
         if isinstance(candidate, str) and candidate.strip():
             return candidate.strip()
     return ""
+
+
+def _extract_whatsapp_message_type(payload: Dict[str, Any]) -> str:
+    data = payload.get("data", {}) if isinstance(payload, dict) and isinstance(payload.get("data"), dict) else {}
+    data_message = data.get("message", {}) if isinstance(data.get("message"), dict) else {}
+
+    if isinstance(data_message, dict) and data_message:
+        return next(iter(data_message.keys()))
+
+    if isinstance(data.get("body"), str) and data.get("body", "").strip():
+        return "body"
+
+    return "unknown"
 
 
 async def _send_chatbot_whatsapp_message(phone: str, text: str):
@@ -1321,11 +1338,20 @@ async def whatsapp_webhook(request: Request):
     payload_dict = payload if isinstance(payload, dict) else {}
     payload_data = payload_dict.get("data", {}) if isinstance(payload_dict.get("data"), dict) else {}
     payload_key = payload_data.get("key", {}) if isinstance(payload_data.get("key"), dict) else {}
+    message_type = _extract_whatsapp_message_type(payload_dict)
+    logger.info(
+        "Webhook recebido - Evento: %s | Instância: %s | Tipo: %s",
+        payload_dict.get("event"),
+        payload_dict.get("instance"),
+        message_type,
+    )
+    logger.info("Metadata da Mensagem: %s", json.dumps(payload_key, ensure_ascii=False))
     if payload_key.get("fromMe") is True:
         return {"status": "ignored", "reason": "self_message"}
 
     sender_raw = _extract_whatsapp_sender(payload_dict)
     incoming_message = _extract_whatsapp_message(payload_dict)
+    logger.info("Processamento: Sender Bruto='%s' | Msg='%s...'", sender_raw, incoming_message[:50])
 
     if not sender_raw or not incoming_message:
         return {"status": "ignored", "reason": "payload incompleto"}
