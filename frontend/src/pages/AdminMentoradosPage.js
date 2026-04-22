@@ -205,7 +205,7 @@ const AdminMentoradosPage = () => {
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <Button onClick={handleApplyFilters} className="bg-primary hover:bg-primary/90 text-white">
+              <Button onClick={handleApplyFilters} className="bg-primary hover:bg-primary/90 text-primary-foreground">
                 Aplicar filtros
               </Button>
               <Button variant="outline" onClick={handleClearFilters} className="border-slate-700 text-slate-300">
@@ -304,7 +304,7 @@ const AdminMentoradosPage = () => {
                                   <Button
                                     onClick={() => handleSaveGoal(selectedUser.user_id, goal)}
                                     disabled={savingGoals[goal.id]}
-                                    className="w-full bg-primary hover:bg-primary/90 text-white md:w-auto"
+                                    className="w-full bg-primary hover:bg-primary/90 text-primary-foreground md:w-auto"
                                   >
                                     <Save size={15} className="mr-2" />
                                     {savingGoals[goal.id] ? 'Salvando...' : 'Salvar meta'}
