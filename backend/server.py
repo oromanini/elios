@@ -1246,15 +1246,14 @@ REGRAS DE ANÁLISE:
 
 
 def _extract_webhook_token(request: Request) -> str:
-    header_token = request.headers.get("apikey") or request.headers.get("x-api-key")
-    if isinstance(header_token, str) and header_token.strip():
-        return header_token.strip()
-
-    query_token = request.query_params.get("apikey") or request.query_params.get("token")
-    if isinstance(query_token, str) and query_token.strip():
-        return query_token.strip()
-
-    return ""
+    # Tenta extrair de headers comuns ou de parâmetros de URL
+    token = (
+        request.headers.get("apikey")
+        or request.headers.get("x-api-key")
+        or request.query_params.get("apikey")
+        or request.query_params.get("token")
+    )
+    return token.strip() if isinstance(token, str) else ""
 
 
 def _extract_whatsapp_sender(payload: Dict[str, Any]) -> str:
