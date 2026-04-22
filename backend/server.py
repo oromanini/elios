@@ -1251,15 +1251,59 @@ def _extract_whatsapp_sender(payload: Dict[str, Any]) -> str:
 
     remote_jid = key.get("remoteJid")
     participant = key.get("participant")
+    phone_pattern = re.compile(r"(\d{8,15})")
+
+    def _extract_phone_candidate(value: Any) -> str:
+        if isinstance(value, str) and value.strip():
+            stripped_value = value.strip()
+            match = phone_pattern.search(stripped_value)
+            if match:
+                return match.group(1)
+            return stripped_value
+        return ""
 
     if isinstance(remote_jid, str) and "@g.us" in remote_jid and isinstance(participant, str) and participant.strip():
         return participant.strip()
 
-    if isinstance(remote_jid, str) and remote_jid.strip():
+    is_lid_sender = isinstance(remote_jid, str) and "@lid" in remote_jid
+
+    if isinstance(remote_jid, str) and remote_jid.strip() and not is_lid_sender:
         return remote_jid.strip()
 
     if isinstance(participant, str) and participant.strip():
         return participant.strip()
+
+    if is_lid_sender:
+        sender_candidates = [
+            data.get("sender"),
+            data.get("senderJid"),
+            data.get("senderLid"),
+            data.get("from"),
+            data.get("chatId"),
+            data.get("author"),
+            key.get("id"),
+            data.get("instanceId"),
+            data.get("pushName"),
+            data.get("verifiedName"),
+        ]
+        message_data = data.get("message", {}) if isinstance(data.get("message"), dict) else {}
+        context_info = (
+            message_data.get("extendedTextMessage", {}).get("contextInfo", {})
+            if isinstance(message_data.get("extendedTextMessage"), dict)
+            and isinstance(message_data.get("extendedTextMessage", {}).get("contextInfo"), dict)
+            else {}
+        )
+        sender_candidates.extend(
+            [
+                context_info.get("participant"),
+                context_info.get("remoteJid"),
+            ]
+        )
+
+        for candidate in sender_candidates:
+            extracted_candidate = _extract_phone_candidate(candidate)
+            if extracted_candidate:
+                return extracted_candidate
 
     return ""
 
@@ -1336,6 +1380,7 @@ async def whatsapp_webhook(request: Request):
         raise HTTPException(status_code=400, detail="Payload JSON inválido.")
 
     payload_dict = payload if isinstance(payload, dict) else {}
+    logger.info("DEBUG ESTRUTURA COMPLETA: %s", json.dumps(payload_dict, ensure_ascii=False))
     payload_data = payload_dict.get("data", {}) if isinstance(payload_dict.get("data"), dict) else {}
     payload_key = payload_data.get("key", {}) if isinstance(payload_data.get("key"), dict) else {}
     message_type = _extract_whatsapp_message_type(payload_dict)
