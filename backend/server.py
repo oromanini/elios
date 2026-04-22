@@ -39,6 +39,7 @@ from whatsapp_utils import (
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
+WHATSAPP_BOT_NUMBER = os.environ.get("WHATSAPP_BOT_NUMBER", os.environ.get("BOT_NUMBER", ""))
 
 # MongoDB connection
 mongo_url = os.environ['MONGO_ATLAS_URI']
@@ -1282,12 +1283,14 @@ async def _resolve_whatsapp_lid_sender(lid_jid: str) -> str:
         }
     }
     resolved_phone_jid = ""
+    bot_number_digits = re.sub(r"\D", "", WHATSAPP_BOT_NUMBER or "")
 
     try:
         async with httpx.AsyncClient(timeout=20.0) as client:
             response = await client.post(endpoint, headers=headers, json=payload)
             response.raise_for_status()
             response_data = response.json()
+            logger.info(f"DEBUG RESOLUÇÃO LID {normalized_lid}: {json.dumps(response_data)}")
     except Exception as exc:
         logger.warning("Falha ao resolver LID '%s' via Evolution API: %s", normalized_lid, str(exc))
         return normalized_lid
@@ -1331,7 +1334,11 @@ async def _resolve_whatsapp_lid_sender(lid_jid: str) -> str:
 
     for candidate in search_targets:
         if isinstance(candidate, str) and "@s.whatsapp.net" in candidate:
-            resolved_phone_jid = candidate.strip()
+            candidate_jid = candidate.strip()
+            candidate_digits = re.sub(r"\D", "", candidate_jid)
+            if bot_number_digits and candidate_digits == bot_number_digits:
+                continue
+            resolved_phone_jid = candidate_jid
             break
 
     if not resolved_phone_jid:
@@ -1339,6 +1346,8 @@ async def _resolve_whatsapp_lid_sender(lid_jid: str) -> str:
             if isinstance(candidate, str):
                 digits_only = re.sub(r"\D", "", candidate)
                 if len(digits_only) >= 8:
+                    if bot_number_digits and digits_only == bot_number_digits:
+                        continue
                     resolved_phone_jid = f"{digits_only}@s.whatsapp.net"
                     break
 
