@@ -3,7 +3,6 @@ import { useParams } from 'react-router-dom';
 import { Loader2, CheckCircle2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
-import { Label } from '../components/ui/label';
 import { Skeleton } from '../components/ui/skeleton';
 import { Badge } from '../components/ui/badge';
 import api from '../services/api';
@@ -148,18 +147,15 @@ const NPSFillPage = () => {
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-6">
-              {pendingEvaluations.map((evaluation, index) => (
+              {pendingEvaluations.map((evaluation) => (
                 <div key={evaluation.goal_id} className="rounded-lg border border-white/10 bg-black/20 p-4 md:p-5">
-                  <Label className="text-sm text-slate-400">Meta {index + 1}</Label>
-                  <div className="mt-1 mb-4">
-                    <div className="flex flex-wrap items-center gap-2">
-                      {evaluation.goal_pillar ? (
-                        <Badge variant="secondary" className="border border-blue-400/30 bg-blue-950/70 text-blue-200">
-                          {evaluation.goal_pillar}
-                        </Badge>
-                      ) : null}
-                      <p className="text-white font-medium">{evaluation.goal_title}</p>
-                    </div>
+                  <div className="mb-4 space-y-2">
+                    {evaluation.goal_pillar ? (
+                      <Badge variant="secondary" className="w-fit border border-blue-400/30 bg-blue-900/80 text-blue-200">
+                        {evaluation.goal_pillar}
+                      </Badge>
+                    ) : null}
+                    <p className="text-white font-semibold">{evaluation.goal_title}</p>
                   </div>
 
                   <div className="grid grid-cols-5 md:grid-cols-10 gap-2">
