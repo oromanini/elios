@@ -1,42 +1,15 @@
 import asyncio
 import logging
 import os
-import re
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List
 
-import httpx
+from whatsapp_utils import _format_phone_for_whatsapp, _send_whatsapp_text
 
 EVOLUTION_API_KEY = os.environ.get("EVOLUTION_API_KEY", "")
-EVOLUTION_API_URL = "https://api-whatsapp.hutooeducacao.com"
-EVOLUTION_INSTANCE = "elios-bot"
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 
 logger = logging.getLogger(__name__)
-
-
-def _format_phone_for_whatsapp(phone: str) -> str:
-    clean = re.sub(r"\D", "", phone or "")
-    if len(clean) in (10, 11) and not clean.startswith("55"):
-        clean = f"55{clean}"
-    return clean
-
-
-async def _send_whatsapp_text(clean_phone: str, text: str):
-    headers = {
-        "apikey": EVOLUTION_API_KEY,
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "number": clean_phone,
-        "text": text,
-        "linkPreview": True,
-    }
-    endpoint = f"{EVOLUTION_API_URL}/message/sendText/{EVOLUTION_INSTANCE}"
-    async with httpx.AsyncClient(timeout=20.0) as client:
-        response = await client.post(endpoint, json=payload, headers=headers)
-        response.raise_for_status()
-
 
 async def send_whatsapp_nps_link(phone: str, nps_id: str, cycle: int):
     if not EVOLUTION_API_KEY:
@@ -66,7 +39,6 @@ async def send_whatsapp_nps_link(phone: str, nps_id: str, cycle: int):
         logger.info("Link de NPS enviado para %s.", clean_phone)
     except Exception as exc:
         logger.warning("Falha ao enviar WhatsApp para %s: %s", phone, exc)
-
 
 async def process_nps_cycles(db, target_user_id: str = None, force: bool = False):
     now = datetime.now(timezone.utc)

@@ -28,6 +28,7 @@ from bson.errors import InvalidId
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from nps_scheduler import process_nps_cycles, process_nps_reminders
+from whatsapp_utils import EVOLUTION_API_KEY, _format_phone_for_whatsapp, _send_whatsapp_text
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -89,6 +90,7 @@ LOGIN_ATTEMPTS: Dict[str, List[datetime]] = {}
 MAX_LOGIN_ATTEMPTS = int(os.environ.get("MAX_LOGIN_ATTEMPTS", "5"))
 LOGIN_WINDOW_MINUTES = int(os.environ.get("LOGIN_WINDOW_MINUTES", "15"))
 INIT_SETUP_TOKEN = os.environ.get("INIT_SETUP_TOKEN", "")
+WHATSAPP_WEBHOOK_TOKEN = os.environ.get("WHATSAPP_WEBHOOK_TOKEN", "")
 
 # Create the main app without a prefix
 app = FastAPI(title="ELIOS - Sistema de Performance Elite")
@@ -1243,11 +1245,123 @@ REGRAS DE ANÁLISE:
             needs_improvement=not fallback_can_proceed,
         )
 
+
+def _extract_webhook_token(request: Request) -> str:
+    return (
+        request.headers.get("apikey")
+        or request.headers.get("x-api-key")
+        or request.headers.get("x-webhook-token")
+        or request.query_params.get("apikey")
+        or request.query_params.get("token")
+        or ""
+    )
+
+
+def _extract_whatsapp_sender(payload: Dict[str, Any]) -> str:
+    data = payload.get("data", {}) if isinstance(payload.get("data"), dict) else {}
+    key = payload.get("key", {}) if isinstance(payload.get("key"), dict) else {}
+    message = payload.get("message", {}) if isinstance(payload.get("message"), dict) else {}
+
+    candidates = [
+        payload.get("from"),
+        payload.get("sender"),
+        payload.get("remoteJid"),
+        data.get("from"),
+        data.get("sender"),
+        data.get("remoteJid"),
+        key.get("remoteJid"),
+        key.get("participant"),
+        message.get("from"),
+    ]
+    for candidate in candidates:
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate
+    return ""
+
+
+def _extract_whatsapp_message(payload: Dict[str, Any]) -> str:
+    data = payload.get("data", {}) if isinstance(payload.get("data"), dict) else {}
+    message = payload.get("message", {}) if isinstance(payload.get("message"), dict) else {}
+
+    extended_text = message.get("extendedTextMessage", {}) if isinstance(message.get("extendedTextMessage"), dict) else {}
+    conversation = message.get("conversation")
+    data_message = data.get("message", {}) if isinstance(data.get("message"), dict) else {}
+    data_extended = data_message.get("extendedTextMessage", {}) if isinstance(data_message.get("extendedTextMessage"), dict) else {}
+
+    candidates = [
+        payload.get("text"),
+        data.get("text"),
+        conversation,
+        extended_text.get("text"),
+        data_message.get("conversation"),
+        data_extended.get("text"),
+    ]
+    for candidate in candidates:
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate.strip()
+    return ""
+
+
+async def _send_chatbot_whatsapp_message(phone: str, text: str):
+    if not EVOLUTION_API_KEY:
+        logger.warning("Envio de WhatsApp do chatbot desativado: EVOLUTION_API_KEY não configurada.")
+        return
+
+    clean_phone = _format_phone_for_whatsapp(phone)
+    if len(clean_phone) < 12:
+        logger.warning("Envio de WhatsApp do chatbot abortado: telefone inválido (%s).", phone)
+        return
+
+    try:
+        await _send_whatsapp_text(clean_phone, text)
+    except Exception as exc:
+        logger.warning("Falha ao enviar resposta do chatbot para %s: %s", phone, exc)
+
 # ==================== ROUTES ====================
 
 @api_router.get("/")
 async def root():
     return {"message": "ELIOS API - Sistema de Performance Elite"}
+
+
+@api_router.post("/webhooks/whatsapp")
+async def whatsapp_webhook(request: Request):
+    if not WHATSAPP_WEBHOOK_TOKEN:
+        logger.error("Webhook WhatsApp rejeitado: WHATSAPP_WEBHOOK_TOKEN não configurado.")
+        raise HTTPException(status_code=503, detail="Webhook de WhatsApp indisponível.")
+
+    received_token = _extract_webhook_token(request)
+    if not secrets.compare_digest(received_token, WHATSAPP_WEBHOOK_TOKEN):
+        raise HTTPException(status_code=401, detail="Token de webhook inválido.")
+
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Payload JSON inválido.")
+    sender_raw = _extract_whatsapp_sender(payload if isinstance(payload, dict) else {})
+    incoming_message = _extract_whatsapp_message(payload if isinstance(payload, dict) else {})
+
+    if not sender_raw or not incoming_message:
+        return {"status": "ignored", "reason": "payload incompleto"}
+
+    sender_phone = _format_phone_for_whatsapp(sender_raw)
+    if len(sender_phone) < 12:
+        return {"status": "ignored", "reason": "telefone inválido"}
+
+    user = await db.users.find_one({"whatsapp": sender_phone}, {"_id": 0, "id": 1})
+    if not user:
+        user = await db.users.find_one({"whatsapp": {"$regex": f"{sender_phone}$"}}, {"_id": 0, "id": 1})
+
+    if user and user.get("id"):
+        ai_response = await chat_with_elios(user["id"], incoming_message)
+    else:
+        ai_response = (
+            "Olá! Eu sou o ELIOS 🤖. Ainda não encontrei o seu cadastro. "
+            "Conheça o Programa Elite e faça sua inscrição para receber acompanhamento personalizado."
+        )
+
+    await _send_chatbot_whatsapp_message(sender_phone, ai_response)
+    return {"status": "ok"}
 
 # ---- AUTH ROUTES ----
 
