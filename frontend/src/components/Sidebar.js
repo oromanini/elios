@@ -81,7 +81,7 @@ const Sidebar = () => {
     : null;
 
   const SidebarContent = () => (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full min-h-0">
       {/* Logo */}
       <div className="p-6 border-b border-white/5">
         <Logo size="md" />
@@ -121,7 +121,7 @@ const Sidebar = () => {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 p-4 space-y-1">
+      <nav className="flex-1 min-h-0 overflow-y-auto p-4 space-y-1">
         <p className="text-xs text-slate-500 uppercase tracking-wider px-4 mb-2">Menu</p>
         {navItems.map((item) => (
           <NavItem key={item.path} item={item} />
