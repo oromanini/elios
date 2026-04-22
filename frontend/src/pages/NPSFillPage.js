@@ -156,6 +156,9 @@ const NPSFillPage = () => {
                       </Badge>
                     ) : null}
                     <p className="text-white font-semibold">{evaluation.goal_title}</p>
+                    {evaluation.goal_description ? (
+                      <p className="text-sm text-slate-300">{evaluation.goal_description}</p>
+                    ) : null}
                   </div>
 
                   <div className="grid grid-cols-5 md:grid-cols-10 gap-2">

@@ -391,6 +391,8 @@ class SystemPromptUpdate(BaseModel):
 class GoalEvaluation(BaseModel):
     goal_id: str
     goal_title: str
+    goal_description: Optional[str] = None
+    goal_pillar: Optional[str] = None
     is_completed: bool
     score: Optional[int] = Field(default=None, ge=1, le=10)
 
@@ -2277,6 +2279,28 @@ async def get_pending_nps_link(nps_id: str):
     nps_doc = await db.nps_records.find_one({**_build_nps_query(nps_id), "status": "pending"})
     if not nps_doc:
         raise HTTPException(status_code=404, detail="NPS pendente não encontrado.")
+
+    user_id = nps_doc.get("user_id")
+    evaluations = nps_doc.get("evaluations", [])
+    goal_ids = [evaluation.get("goal_id") for evaluation in evaluations if evaluation.get("goal_id")]
+
+    goals_by_id: Dict[str, Dict[str, Any]] = {}
+    if user_id and goal_ids:
+        goals = await db.goals.find(
+            {"user_id": user_id, "id": {"$in": goal_ids}, "is_deleted": {"$ne": True}},
+            {"_id": 0, "id": 1, "title": 1, "description": 1, "pillar": 1},
+        ).to_list(length=None)
+        goals_by_id = {goal.get("id"): goal for goal in goals if goal.get("id")}
+
+    for evaluation in evaluations:
+        goal_id = evaluation.get("goal_id")
+        goal = goals_by_id.get(goal_id)
+        if not goal:
+            continue
+        evaluation["goal_title"] = goal.get("title") or evaluation.get("goal_title") or "Meta sem título"
+        evaluation["goal_description"] = goal.get("description") or evaluation.get("goal_description") or ""
+        evaluation["goal_pillar"] = goal.get("pillar") or evaluation.get("goal_pillar") or ""
+
     return NPSRecord(**_serialize_nps_record(nps_doc))
 
 
