@@ -16,18 +16,17 @@ def format_phone_for_whatsapp(phone: str) -> str:
 
 
 async def send_whatsapp_text(recipient: str, text: str):
-    target = (recipient or "").strip()
-    if "@" not in target:
-        target = format_phone_for_whatsapp(target)
+    clean_phone = re.sub(r"\D", "", str(recipient))
 
     headers = {
         "apikey": EVOLUTION_API_KEY,
         "Content-Type": "application/json",
     }
     payload = {
-        "number": target,
+        "number": clean_phone,
         "text": text,
-        "linkPreview": True,
+        "delay": 0,
+        "linkPreview": False,
     }
     endpoint = f"{EVOLUTION_API_URL}/message/sendText/{EVOLUTION_INSTANCE}"
     async with httpx.AsyncClient(timeout=20.0) as client:

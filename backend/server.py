@@ -1764,20 +1764,21 @@ async def _resolve_whatsapp_user_by_identity(remote_jid: str, incoming_message: 
     return {"status": "linked_now", "user": user}
 
 
-async def _send_chatbot_whatsapp_message(remote_jid: str, text: str):
+async def _send_chatbot_whatsapp_message(target_phone: str, text: str):
     if not EVOLUTION_API_KEY:
         logger.warning("Envio de WhatsApp do chatbot desativado: EVOLUTION_API_KEY não configurada.")
         return
 
-    if not isinstance(remote_jid, str) or "@" not in remote_jid:
-        logger.warning("Envio de WhatsApp do chatbot abortado: JID inválido (%s).", remote_jid)
+    clean_phone = re.sub(r"\D", "", str(target_phone))
+    if len(clean_phone) < 8:
+        logger.warning("Envio de WhatsApp do chatbot abortado: telefone inválido (%s).", target_phone)
         return
 
     try:
-        await send_whatsapp_text(remote_jid.strip(), text)
-        logger.info(f"Resposta do ELIOS enviada com sucesso para {remote_jid}")
+        await send_whatsapp_text(clean_phone, text)
+        logger.info(f"Resposta do ELIOS enviada com sucesso para {clean_phone}")
     except Exception as exc:
-        logger.error(f"Erro crítico: Falha ao enviar resposta via Evolution API para {remote_jid}. Detalhes: {str(exc)}")
+        logger.error(f"Erro crítico: Falha ao enviar resposta via Evolution API para {clean_phone}. Detalhes: {str(exc)}")
 
 # ==================== ROUTES ====================
 
@@ -1826,23 +1827,29 @@ async def whatsapp_webhook(request: Request):
     if len(sender_phone) < 8:
         return {"status": "ignored", "reason": "telefone inválido"}
 
+    target_phone = re.sub(r"\D", "", str(remote_jid))
+    if resolution["status"] in {"linked", "linked_now"}:
+        db_phone = resolution["user"].get("whatsapp") if isinstance(resolution.get("user"), dict) else ""
+        target_phone = re.sub(r"\D", "", str(db_phone)) or re.sub(r"\D", "", str(remote_jid))
+        logger.info(f"Roteando resposta: LID {remote_jid} -> DB Phone {target_phone}")
+
     if resolution["status"] == "awaiting_email":
         await _send_chatbot_whatsapp_message(
-            remote_jid,
+            target_phone,
             "Olá! Sou o ELIOS. Ainda não reconheço este número. Por favor, digite o seu e-mail de cadastro para começarmos.",
         )
         return {"status": "ok", "reason": "awaiting_email"}
 
     if resolution["status"] == "email_not_found":
         await _send_chatbot_whatsapp_message(
-            remote_jid,
+            target_phone,
             "Não encontrei este e-mail no seu cadastro. Por favor, confira e envie novamente.",
         )
         return {"status": "ok", "reason": "email_not_found"}
 
     if resolution["status"] == "email_already_linked_elsewhere":
         await _send_chatbot_whatsapp_message(
-            remote_jid,
+            target_phone,
             "Este e-mail já está vinculado a outro número de WhatsApp. Para sua segurança, solicite ao suporte/admin a atualização do vínculo.",
         )
         return {"status": "ok", "reason": "email_already_linked_elsewhere"}
@@ -1851,7 +1858,7 @@ async def whatsapp_webhook(request: Request):
         user_name = _first_name(resolution["user"].get("full_name", ""))
         greeting = f"Perfeito, {user_name}! Identifiquei o seu cadastro. Como posso ajudar hoje?" if user_name else "Perfeito! Identifiquei o seu cadastro. Como posso ajudar hoje?"
         await _send_chatbot_whatsapp_message(
-            remote_jid,
+            target_phone,
             greeting,
         )
         return {"status": "ok", "reason": "linked_now"}
@@ -1860,7 +1867,7 @@ async def whatsapp_webhook(request: Request):
     logger.info("Webhook: Iniciando processamento para o mentorado ID: %s (LID: %s)", user["id"], remote_jid)
     ai_response = await chat_with_elios(user["id"], incoming_message)
 
-    await _send_chatbot_whatsapp_message(remote_jid, ai_response)
+    await _send_chatbot_whatsapp_message(target_phone, ai_response)
     return {"status": "ok", "reason": "linked"}
 
 
@@ -1915,21 +1922,27 @@ async def whatsapp_messages_upsert_webhook(request: Request):
     )
 
     resolution = await _resolve_whatsapp_user_by_identity(remote_jid, incoming_message)
+    target_phone = re.sub(r"\D", "", str(remote_jid))
+    if resolution["status"] in {"linked", "linked_now"}:
+        db_phone = resolution["user"].get("whatsapp") if isinstance(resolution.get("user"), dict) else ""
+        target_phone = re.sub(r"\D", "", str(db_phone)) or re.sub(r"\D", "", str(remote_jid))
+        logger.info(f"Roteando resposta: LID {remote_jid} -> DB Phone {target_phone}")
+
     if resolution["status"] == "awaiting_email":
         await _send_chatbot_whatsapp_message(
-            remote_jid,
+            target_phone,
             "Olá! Sou o ELIOS. Ainda não reconheço este número. Por favor, digite o seu e-mail de cadastro para começarmos.",
         )
         return {"status": "ok", "reason": "awaiting_email"}
     if resolution["status"] == "email_not_found":
         await _send_chatbot_whatsapp_message(
-            remote_jid,
+            target_phone,
             "Não encontrei este e-mail no seu cadastro. Por favor, confira e envie novamente.",
         )
         return {"status": "ok", "reason": "email_not_found"}
     if resolution["status"] == "email_already_linked_elsewhere":
         await _send_chatbot_whatsapp_message(
-            remote_jid,
+            target_phone,
             "Este e-mail já está vinculado a outro número de WhatsApp. Para sua segurança, solicite ao suporte/admin a atualização do vínculo.",
         )
         return {"status": "ok", "reason": "email_already_linked_elsewhere"}
@@ -1937,14 +1950,14 @@ async def whatsapp_messages_upsert_webhook(request: Request):
         user_name = _first_name(resolution["user"].get("full_name", ""))
         greeting = f"Perfeito, {user_name}! Identifiquei o seu cadastro. Como posso ajudar hoje?" if user_name else "Perfeito! Identifiquei o seu cadastro. Como posso ajudar hoje?"
         await _send_chatbot_whatsapp_message(
-            remote_jid,
+            target_phone,
             greeting,
         )
         return {"status": "ok", "reason": "linked_now"}
 
     user = resolution["user"]
     ai_response = await chat_with_elios(user["id"], incoming_message)
-    await _send_chatbot_whatsapp_message(remote_jid, ai_response)
+    await _send_chatbot_whatsapp_message(target_phone, ai_response)
     return {"status": "ok", "reason": "linked"}
 
 # ---- AUTH ROUTES ----
