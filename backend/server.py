@@ -1528,15 +1528,6 @@ async def _extract_whatsapp_sender(payload: Dict[str, Any]) -> str:
     return ""
 
 
-def _extract_target_id_from_remote_jid(remote_jid: str) -> str:
-    if not isinstance(remote_jid, str) or not remote_jid.strip():
-        return ""
-    normalized_remote_jid = remote_jid.strip()
-    if "@lid" in normalized_remote_jid or "@s.whatsapp.net" in normalized_remote_jid:
-        return re.sub(r"\D", "", normalized_remote_jid.split("@")[0])
-    return re.sub(r"\D", "", normalized_remote_jid.split("@")[0])
-
-
 def _extract_whatsapp_message(payload: Dict[str, Any]) -> str:
     data = payload.get("data", {}) if isinstance(payload, dict) and isinstance(payload.get("data"), dict) else {}
     data_message = data.get("message", {}) if isinstance(data.get("message"), dict) else {}
@@ -1572,39 +1563,6 @@ def _extract_whatsapp_message_type(payload: Dict[str, Any]) -> str:
         return "body"
 
     return "unknown"
-
-
-def _extract_upsert_message(payload: Dict[str, Any]) -> str:
-    payload_dict = payload if isinstance(payload, dict) else {}
-    data = payload_dict.get("data", {}) if isinstance(payload_dict.get("data"), dict) else {}
-
-    messages = data.get("messages", []) if isinstance(data.get("messages"), list) else []
-    for message in messages:
-        if not isinstance(message, dict):
-            continue
-        message_key = message.get("key", {}) if isinstance(message.get("key"), dict) else {}
-        if message_key.get("fromMe") is True:
-            continue
-        message_body = message.get("message", {}) if isinstance(message.get("message"), dict) else {}
-        extended = (
-            message_body.get("extendedTextMessage", {})
-            if isinstance(message_body.get("extendedTextMessage"), dict)
-            else {}
-        )
-        candidates = [
-            message_body.get("conversation"),
-            extended.get("text"),
-            message.get("body"),
-        ]
-        for candidate in candidates:
-            if isinstance(candidate, str) and candidate.strip():
-                return candidate.strip()
-
-    data_key = data.get("key", {}) if isinstance(data.get("key"), dict) else {}
-    if data_key.get("fromMe") is True:
-        return ""
-
-    return _extract_whatsapp_message(payload_dict)
 
 
 def _extract_remote_jid(payload: Dict[str, Any]) -> str:
@@ -1766,7 +1724,7 @@ async def whatsapp_webhook(request: Request):
         return {"status": "ignored", "reason": "payload incompleto"}
 
     resolution = await _resolve_whatsapp_user_by_identity(remote_jid, incoming_message)
-    target_id = _extract_target_id_from_remote_jid(remote_jid)
+    target_id = re.sub(r"\D", "", remote_jid.split("@")[0])
     if len(target_id) < 8:
         return {"status": "ignored", "reason": "telefone inválido"}
 
@@ -1804,88 +1762,6 @@ async def whatsapp_webhook(request: Request):
     logger.info("Webhook: Iniciando processamento para o mentorado ID: %s (LID: %s)", user["id"], remote_jid)
     ai_response = await chat_with_elios(user["id"], incoming_message)
 
-    await _send_chatbot_whatsapp_message(target_id, ai_response)
-    return {"status": "ok", "reason": "linked"}
-
-
-@api_router.post("/webhooks/whatsapp/messages-upsert")
-async def whatsapp_messages_upsert_webhook(request: Request):
-    if not EVOLUTION_API_KEY:
-        logger.error("Webhook WhatsApp messages-upsert rejeitado: EVOLUTION_API_KEY não configurada.")
-        raise HTTPException(status_code=503, detail="Webhook de WhatsApp indisponível.")
-
-    try:
-        payload = await request.json()
-    except Exception:
-        raise HTTPException(status_code=400, detail="Payload JSON inválido.")
-
-    payload_dict = payload if isinstance(payload, dict) else {}
-    data = payload_dict.get("data", {}) if isinstance(payload_dict.get("data"), dict) else {}
-    data_key = data.get("key", {}) if isinstance(data.get("key"), dict) else {}
-    messages = data.get("messages", []) if isinstance(data.get("messages"), list) else []
-
-    has_inbound_message = False
-    if isinstance(data_key, dict) and data_key.get("fromMe") is False:
-        has_inbound_message = True
-    if not has_inbound_message:
-        for msg in messages:
-            if isinstance(msg, dict):
-                msg_key = msg.get("key", {}) if isinstance(msg.get("key"), dict) else {}
-                if msg_key.get("fromMe") is False:
-                    has_inbound_message = True
-                    break
-
-    if not has_inbound_message:
-        return {"status": "ignored", "reason": "self_message"}
-
-    incoming_message = _extract_upsert_message(payload_dict)
-    if not incoming_message:
-        return {"status": "ignored", "reason": "empty_message"}
-
-    remote_jid = _extract_remote_jid(payload_dict)
-    if not remote_jid:
-        return {"status": "ignored", "reason": "remote_jid_not_found"}
-
-    logger.info(
-        "Webhook messages-upsert recebido | Instância: %s | remoteJid: %s",
-        payload_dict.get("instance"),
-        remote_jid,
-    )
-
-    resolution = await _resolve_whatsapp_user_by_identity(remote_jid, incoming_message)
-    target_id = _extract_target_id_from_remote_jid(remote_jid)
-    if len(target_id) < 8:
-        return {"status": "ignored", "reason": "phone_not_found"}
-
-    if resolution["status"] == "awaiting_email":
-        await _send_chatbot_whatsapp_message(
-            target_id,
-            "Olá! Sou o ELIOS. Ainda não reconheço este número. Por favor, digite o seu e-mail de cadastro para começarmos.",
-        )
-        return {"status": "ok", "reason": "awaiting_email"}
-    if resolution["status"] == "email_not_found":
-        await _send_chatbot_whatsapp_message(
-            target_id,
-            "Não encontrei este e-mail no seu cadastro. Por favor, confira e envie novamente.",
-        )
-        return {"status": "ok", "reason": "email_not_found"}
-    if resolution["status"] == "email_already_linked":
-        await _send_chatbot_whatsapp_message(
-            target_id,
-            "Esse e-mail está vinculado a outro número de whatsapp. Por favor, fale com o administrador do ELIOS.",
-        )
-        return {"status": "ok", "reason": "email_already_linked"}
-    if resolution["status"] == "linked_now":
-        user_name = _first_name(resolution["user"].get("full_name", ""))
-        greeting = f"Perfeito, {user_name}! Identifiquei o seu cadastro. Como posso ajudar hoje?" if user_name else "Perfeito! Identifiquei o seu cadastro. Como posso ajudar hoje?"
-        await _send_chatbot_whatsapp_message(
-            target_id,
-            greeting,
-        )
-        return {"status": "ok", "reason": "linked_now"}
-
-    user = resolution["user"]
-    ai_response = await chat_with_elios(user["id"], incoming_message)
     await _send_chatbot_whatsapp_message(target_id, ai_response)
     return {"status": "ok", "reason": "linked"}
 
