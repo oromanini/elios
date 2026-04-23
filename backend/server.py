@@ -34,7 +34,6 @@ from whatsapp_utils import (
     EVOLUTION_API_KEY,
     EVOLUTION_API_URL,
     EVOLUTION_INSTANCE,
-    format_phone_for_whatsapp,
     send_whatsapp_text,
 )
 
@@ -1529,73 +1528,13 @@ async def _extract_whatsapp_sender(payload: Dict[str, Any]) -> str:
     return ""
 
 
-def _extract_phone_digits(value: Any) -> Optional[str]:
-    if not isinstance(value, str):
-        return None
-    candidate = value.strip()
-    if not candidate or "@lid" in candidate:
-        return None
-    if "@" in candidate:
-        candidate = candidate.split("@", 1)[0]
-    digits = re.sub(r"\D", "", candidate)
-    if 8 <= len(digits) <= 15:
-        return digits
-    return None
-
-
-def extract_user_phone(payload: Dict[str, Any]) -> Optional[str]:
-    """
-    Extrai o telefone real do usuário com tolerância a variações de payload.
-    Retorna apenas dígitos (ex.: 5544999571601) ou None.
-    """
-    try:
-        payload_dict = payload if isinstance(payload, dict) else {}
-        data = payload_dict.get("data", {}) if isinstance(payload_dict.get("data"), dict) else {}
-        data_key = data.get("key", {}) if isinstance(data.get("key"), dict) else {}
-        messages = data.get("messages", []) if isinstance(data.get("messages"), list) else []
-
-        def _extract_from_key(key_obj: Any) -> Optional[str]:
-            if not isinstance(key_obj, dict):
-                return None
-
-            participant_phone = _extract_phone_digits(key_obj.get("participant"))
-            if participant_phone:
-                return participant_phone
-
-            remote_jid = key_obj.get("remoteJid")
-            if isinstance(remote_jid, str) and remote_jid.strip().endswith("@s.whatsapp.net"):
-                remote_phone = _extract_phone_digits(remote_jid)
-                if remote_phone:
-                    return remote_phone
-            return None
-
-        # 1) Campos prioritários
-        phone = _extract_from_key(data_key)
-        if phone:
-            return phone
-
-        for message in messages:
-            message_key = message.get("key", {}) if isinstance(message, dict) and isinstance(message.get("key"), dict) else {}
-            phone = _extract_from_key(message_key)
-            if phone:
-                return phone
-
-        # 2) senderPn/cleanedSenderPn quando disponíveis
-        for message in messages:
-            message_key = message.get("key", {}) if isinstance(message, dict) and isinstance(message.get("key"), dict) else {}
-            cleaned_sender = _extract_phone_digits(message_key.get("cleanedSenderPn"))
-            if cleaned_sender:
-                return cleaned_sender
-
-            sender_pn = _extract_phone_digits(message_key.get("senderPn"))
-            if sender_pn:
-                return sender_pn
-
-        logger.warning("Webhook messages-upsert: não foi possível extrair telefone do usuário.")
-        return None
-    except Exception as exc:
-        logger.warning("Webhook messages-upsert: erro ao extrair telefone (%s).", str(exc))
-        return None
+def _extract_target_id_from_remote_jid(remote_jid: str) -> str:
+    if not isinstance(remote_jid, str) or not remote_jid.strip():
+        return ""
+    normalized_remote_jid = remote_jid.strip()
+    if "@lid" in normalized_remote_jid or "@s.whatsapp.net" in normalized_remote_jid:
+        return re.sub(r"\D", "", normalized_remote_jid.split("@")[0])
+    return re.sub(r"\D", "", normalized_remote_jid.split("@")[0])
 
 
 def _extract_whatsapp_message(payload: Dict[str, Any]) -> str:
@@ -1827,37 +1766,27 @@ async def whatsapp_webhook(request: Request):
         return {"status": "ignored", "reason": "payload incompleto"}
 
     resolution = await _resolve_whatsapp_user_by_identity(remote_jid, incoming_message)
-    system_fallback_phone = re.sub(r"\D", "", str(remote_jid))
-    if len(system_fallback_phone) < 8:
-        system_fallback_phone = format_phone_for_whatsapp(remote_jid)
-    if len(system_fallback_phone) < 8:
-        system_fallback_phone = extract_user_phone(payload_dict) or ""
-    if len(system_fallback_phone) < 8:
+    target_id = _extract_target_id_from_remote_jid(remote_jid)
+    if len(target_id) < 8:
         return {"status": "ignored", "reason": "telefone inválido"}
-
-    target_phone = system_fallback_phone
-    if resolution["status"] in {"linked", "linked_now"}:
-        db_phone = resolution["user"].get("whatsapp") if isinstance(resolution.get("user"), dict) else ""
-        target_phone = re.sub(r"\D", "", str(db_phone)) or system_fallback_phone
-        logger.info(f"Roteando resposta: LID {remote_jid} -> DB Phone {target_phone}")
 
     if resolution["status"] == "awaiting_email":
         await _send_chatbot_whatsapp_message(
-            target_phone,
+            target_id,
             "Olá! Sou o ELIOS. Ainda não reconheço este número. Por favor, digite o seu e-mail de cadastro para começarmos.",
         )
         return {"status": "ok", "reason": "awaiting_email"}
 
     if resolution["status"] == "email_not_found":
         await _send_chatbot_whatsapp_message(
-            target_phone,
+            target_id,
             "Não encontrei este e-mail no seu cadastro. Por favor, confira e envie novamente.",
         )
         return {"status": "ok", "reason": "email_not_found"}
 
     if resolution["status"] == "email_already_linked":
         await _send_chatbot_whatsapp_message(
-            system_fallback_phone,
+            target_id,
             "Esse e-mail está vinculado a outro número de whatsapp. Por favor, fale com o administrador do ELIOS.",
         )
         return {"status": "ok", "reason": "email_already_linked"}
@@ -1866,7 +1795,7 @@ async def whatsapp_webhook(request: Request):
         user_name = _first_name(resolution["user"].get("full_name", ""))
         greeting = f"Perfeito, {user_name}! Identifiquei o seu cadastro. Como posso ajudar hoje?" if user_name else "Perfeito! Identifiquei o seu cadastro. Como posso ajudar hoje?"
         await _send_chatbot_whatsapp_message(
-            target_phone,
+            target_id,
             greeting,
         )
         return {"status": "ok", "reason": "linked_now"}
@@ -1875,7 +1804,7 @@ async def whatsapp_webhook(request: Request):
     logger.info("Webhook: Iniciando processamento para o mentorado ID: %s (LID: %s)", user["id"], remote_jid)
     ai_response = await chat_with_elios(user["id"], incoming_message)
 
-    await _send_chatbot_whatsapp_message(target_phone, ai_response)
+    await _send_chatbot_whatsapp_message(target_id, ai_response)
     return {"status": "ok", "reason": "linked"}
 
 
@@ -1924,35 +1853,25 @@ async def whatsapp_messages_upsert_webhook(request: Request):
     )
 
     resolution = await _resolve_whatsapp_user_by_identity(remote_jid, incoming_message)
-    system_fallback_phone = re.sub(r"\D", "", str(remote_jid))
-    if len(system_fallback_phone) < 8:
-        system_fallback_phone = format_phone_for_whatsapp(remote_jid)
-    if len(system_fallback_phone) < 8:
-        system_fallback_phone = extract_user_phone(payload_dict) or ""
-    if len(system_fallback_phone) < 8:
+    target_id = _extract_target_id_from_remote_jid(remote_jid)
+    if len(target_id) < 8:
         return {"status": "ignored", "reason": "phone_not_found"}
-
-    target_phone = system_fallback_phone
-    if resolution["status"] in {"linked", "linked_now"}:
-        db_phone = resolution["user"].get("whatsapp") if isinstance(resolution.get("user"), dict) else ""
-        target_phone = re.sub(r"\D", "", str(db_phone)) or system_fallback_phone
-        logger.info(f"Roteando resposta: LID {remote_jid} -> DB Phone {target_phone}")
 
     if resolution["status"] == "awaiting_email":
         await _send_chatbot_whatsapp_message(
-            target_phone,
+            target_id,
             "Olá! Sou o ELIOS. Ainda não reconheço este número. Por favor, digite o seu e-mail de cadastro para começarmos.",
         )
         return {"status": "ok", "reason": "awaiting_email"}
     if resolution["status"] == "email_not_found":
         await _send_chatbot_whatsapp_message(
-            target_phone,
+            target_id,
             "Não encontrei este e-mail no seu cadastro. Por favor, confira e envie novamente.",
         )
         return {"status": "ok", "reason": "email_not_found"}
     if resolution["status"] == "email_already_linked":
         await _send_chatbot_whatsapp_message(
-            system_fallback_phone,
+            target_id,
             "Esse e-mail está vinculado a outro número de whatsapp. Por favor, fale com o administrador do ELIOS.",
         )
         return {"status": "ok", "reason": "email_already_linked"}
@@ -1960,14 +1879,14 @@ async def whatsapp_messages_upsert_webhook(request: Request):
         user_name = _first_name(resolution["user"].get("full_name", ""))
         greeting = f"Perfeito, {user_name}! Identifiquei o seu cadastro. Como posso ajudar hoje?" if user_name else "Perfeito! Identifiquei o seu cadastro. Como posso ajudar hoje?"
         await _send_chatbot_whatsapp_message(
-            target_phone,
+            target_id,
             greeting,
         )
         return {"status": "ok", "reason": "linked_now"}
 
     user = resolution["user"]
     ai_response = await chat_with_elios(user["id"], incoming_message)
-    await _send_chatbot_whatsapp_message(target_phone, ai_response)
+    await _send_chatbot_whatsapp_message(target_id, ai_response)
     return {"status": "ok", "reason": "linked"}
 
 # ---- AUTH ROUTES ----
