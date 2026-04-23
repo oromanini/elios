@@ -1711,7 +1711,10 @@ async def _resolve_whatsapp_user_by_identity(remote_jid: str, incoming_message: 
         {"_id": 0, "user_id": 1, "email": 1},
     )
     if identity and identity.get("user_id"):
-        user = await db.users.find_one({"id": identity["user_id"]}, {"_id": 0, "id": 1, "full_name": 1, "email": 1})
+        user = await db.users.find_one(
+            {"id": identity["user_id"]},
+            {"_id": 0, "id": 1, "full_name": 1, "email": 1, "whatsapp": 1},
+        )
         if user and user.get("id"):
             return {"status": "linked", "user": user}
 
@@ -1722,17 +1725,20 @@ async def _resolve_whatsapp_user_by_identity(remote_jid: str, incoming_message: 
     escaped_email = re.escape(email_candidate)
     user = await db.users.find_one(
         {"email": {"$regex": f"^{escaped_email}$", "$options": "i"}},
-        {"_id": 0, "id": 1, "full_name": 1, "email": 1},
+        {"_id": 0, "id": 1, "full_name": 1, "email": 1, "whatsapp": 1},
     )
     if not user or not user.get("id"):
         return {"status": "email_not_found"}
 
     linked_with_other_lid = await db.whatsapp_identity_resolution.find_one(
-        {"user_id": user["id"], "lid": {"$ne": remote_jid}},
+        {
+            "email": {"$regex": f"^{escaped_email}$", "$options": "i"},
+            "lid": {"$ne": remote_jid},
+        },
         {"_id": 0, "lid": 1},
     )
     if linked_with_other_lid and linked_with_other_lid.get("lid"):
-        return {"status": "email_already_linked_elsewhere"}
+        return {"status": "email_already_linked"}
 
     now_iso = datetime.now(timezone.utc).isoformat()
     await db.whatsapp_identity_resolution.update_one(
@@ -1821,16 +1827,18 @@ async def whatsapp_webhook(request: Request):
         return {"status": "ignored", "reason": "payload incompleto"}
 
     resolution = await _resolve_whatsapp_user_by_identity(remote_jid, incoming_message)
-    sender_phone = format_phone_for_whatsapp(remote_jid)
-    if len(sender_phone) < 8:
-        sender_phone = extract_user_phone(payload_dict) or ""
-    if len(sender_phone) < 8:
+    system_fallback_phone = re.sub(r"\D", "", str(remote_jid))
+    if len(system_fallback_phone) < 8:
+        system_fallback_phone = format_phone_for_whatsapp(remote_jid)
+    if len(system_fallback_phone) < 8:
+        system_fallback_phone = extract_user_phone(payload_dict) or ""
+    if len(system_fallback_phone) < 8:
         return {"status": "ignored", "reason": "telefone inválido"}
 
-    target_phone = re.sub(r"\D", "", str(remote_jid))
+    target_phone = system_fallback_phone
     if resolution["status"] in {"linked", "linked_now"}:
         db_phone = resolution["user"].get("whatsapp") if isinstance(resolution.get("user"), dict) else ""
-        target_phone = re.sub(r"\D", "", str(db_phone)) or re.sub(r"\D", "", str(remote_jid))
+        target_phone = re.sub(r"\D", "", str(db_phone)) or system_fallback_phone
         logger.info(f"Roteando resposta: LID {remote_jid} -> DB Phone {target_phone}")
 
     if resolution["status"] == "awaiting_email":
@@ -1847,12 +1855,12 @@ async def whatsapp_webhook(request: Request):
         )
         return {"status": "ok", "reason": "email_not_found"}
 
-    if resolution["status"] == "email_already_linked_elsewhere":
+    if resolution["status"] == "email_already_linked":
         await _send_chatbot_whatsapp_message(
-            target_phone,
-            "Este e-mail já está vinculado a outro número de WhatsApp. Para sua segurança, solicite ao suporte/admin a atualização do vínculo.",
+            system_fallback_phone,
+            "Esse e-mail está vinculado a outro número de whatsapp. Por favor, fale com o administrador do ELIOS.",
         )
-        return {"status": "ok", "reason": "email_already_linked_elsewhere"}
+        return {"status": "ok", "reason": "email_already_linked"}
 
     if resolution["status"] == "linked_now":
         user_name = _first_name(resolution["user"].get("full_name", ""))
@@ -1909,12 +1917,6 @@ async def whatsapp_messages_upsert_webhook(request: Request):
     if not remote_jid:
         return {"status": "ignored", "reason": "remote_jid_not_found"}
 
-    sender_phone = format_phone_for_whatsapp(remote_jid)
-    if len(sender_phone) < 8:
-        sender_phone = extract_user_phone(payload_dict) or ""
-    if len(sender_phone) < 8:
-        return {"status": "ignored", "reason": "phone_not_found"}
-
     logger.info(
         "Webhook messages-upsert recebido | Instância: %s | remoteJid: %s",
         payload_dict.get("instance"),
@@ -1922,10 +1924,18 @@ async def whatsapp_messages_upsert_webhook(request: Request):
     )
 
     resolution = await _resolve_whatsapp_user_by_identity(remote_jid, incoming_message)
-    target_phone = re.sub(r"\D", "", str(remote_jid))
+    system_fallback_phone = re.sub(r"\D", "", str(remote_jid))
+    if len(system_fallback_phone) < 8:
+        system_fallback_phone = format_phone_for_whatsapp(remote_jid)
+    if len(system_fallback_phone) < 8:
+        system_fallback_phone = extract_user_phone(payload_dict) or ""
+    if len(system_fallback_phone) < 8:
+        return {"status": "ignored", "reason": "phone_not_found"}
+
+    target_phone = system_fallback_phone
     if resolution["status"] in {"linked", "linked_now"}:
         db_phone = resolution["user"].get("whatsapp") if isinstance(resolution.get("user"), dict) else ""
-        target_phone = re.sub(r"\D", "", str(db_phone)) or re.sub(r"\D", "", str(remote_jid))
+        target_phone = re.sub(r"\D", "", str(db_phone)) or system_fallback_phone
         logger.info(f"Roteando resposta: LID {remote_jid} -> DB Phone {target_phone}")
 
     if resolution["status"] == "awaiting_email":
@@ -1940,12 +1950,12 @@ async def whatsapp_messages_upsert_webhook(request: Request):
             "Não encontrei este e-mail no seu cadastro. Por favor, confira e envie novamente.",
         )
         return {"status": "ok", "reason": "email_not_found"}
-    if resolution["status"] == "email_already_linked_elsewhere":
+    if resolution["status"] == "email_already_linked":
         await _send_chatbot_whatsapp_message(
-            target_phone,
-            "Este e-mail já está vinculado a outro número de WhatsApp. Para sua segurança, solicite ao suporte/admin a atualização do vínculo.",
+            system_fallback_phone,
+            "Esse e-mail está vinculado a outro número de whatsapp. Por favor, fale com o administrador do ELIOS.",
         )
-        return {"status": "ok", "reason": "email_already_linked_elsewhere"}
+        return {"status": "ok", "reason": "email_already_linked"}
     if resolution["status"] == "linked_now":
         user_name = _first_name(resolution["user"].get("full_name", ""))
         greeting = f"Perfeito, {user_name}! Identifiquei o seu cadastro. Como posso ajudar hoje?" if user_name else "Perfeito! Identifiquei o seu cadastro. Como posso ajudar hoje?"
