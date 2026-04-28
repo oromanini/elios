@@ -37,12 +37,22 @@ const DashboardPage = () => {
 
   const loadData = async () => {
     try {
-      const [statsRes, responsesRes] = await Promise.all([
+      const [statsResult, responsesResult] = await Promise.allSettled([
         dashboardAPI.getStats(),
         formAPI.getResponses()
       ]);
-      setStats(statsRes.data);
-      setResponses(responsesRes.data);
+
+      if (statsResult.status === 'fulfilled') {
+        setStats(statsResult.value.data);
+      } else {
+        throw statsResult.reason;
+      }
+
+      if (responsesResult.status === 'fulfilled') {
+        setResponses(responsesResult.value.data);
+      } else {
+        setResponses([]);
+      }
     } catch (error) {
       console.error('Error loading dashboard:', error);
       toast.error('Erro ao carregar dashboard');
@@ -126,7 +136,7 @@ const DashboardPage = () => {
                 <div>
                   <p className="text-slate-400 text-sm">Pilares Ativos</p>
                   <p className="text-3xl font-bold text-white mt-1">
-                    {Object.keys(stats?.pillars || {}).length}
+                    {stats?.filled_pillars ?? 0}
                   </p>
                 </div>
                 <div className="w-12 h-12 rounded-lg bg-amber-500/20 flex items-center justify-center">
