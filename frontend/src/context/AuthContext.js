@@ -47,19 +47,38 @@ export const AuthProvider = ({ children }) => {
     const { user: userData } = response.data;
     setUser(userData);
 
-    // Validação defensiva: garante que o cookie de sessão foi persistido pelo navegador.
-    try {
-      const me = await authAPI.getMe();
-      setUser(me.data);
-      return me.data;
-    } catch (error) {
-      clearAuthState();
-      const cookieBlockedError = new Error(
-        'Sessão não persistida no navegador. Verifique bloqueio de cookies e configurações de privacidade.'
-      );
-      cookieBlockedError.cause = error;
-      throw cookieBlockedError;
+    // Validação defensiva: confirma persistência do cookie sem bloquear login em falhas transitórias.
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const maxAttempts = 3;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        const me = await authAPI.getMe();
+        setUser(me.data);
+        return me.data;
+      } catch (error) {
+        const status = error?.response?.status;
+        const isUnauthorized = status === 401;
+        const isLastAttempt = attempt === maxAttempts;
+
+        if (isUnauthorized && isLastAttempt) {
+          clearAuthState();
+          const cookieBlockedError = new Error(
+            'Sessão não persistida no navegador. Verifique bloqueio de cookies e configurações de privacidade.'
+          );
+          cookieBlockedError.cause = error;
+          throw cookieBlockedError;
+        }
+
+        if (!isUnauthorized || isLastAttempt) {
+          return userData;
+        }
+
+        await sleep(150 * attempt);
+      }
     }
+
+    return userData;
   };
 
   const logout = async () => {
