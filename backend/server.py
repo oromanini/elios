@@ -88,10 +88,16 @@ if '*' in CORS_ORIGINS:
 if ENV == "production":
     invalid_origins = [origin for origin in CORS_ORIGINS if not origin.startswith("https://")]
     if invalid_origins:
-        raise RuntimeError(
-            "Em produção, CORS_ORIGINS deve conter apenas URLs https exatas do frontend. "
-            f"Inválidas: {', '.join(invalid_origins)}"
+        CORS_ORIGINS = [origin for origin in CORS_ORIGINS if origin.startswith("https://")]
+        logging.warning(
+            "Ignorando CORS_ORIGINS inválidas em produção (somente https é permitido): %s",
+            ", ".join(invalid_origins),
         )
+        if not CORS_ORIGINS:
+            raise RuntimeError(
+                "Nenhuma origem CORS https válida encontrada em produção. "
+                "Defina CORS_ORIGINS com URLs https exatas do frontend."
+            )
 
 # AI Configuration (Groq only)
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY', '')
