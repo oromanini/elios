@@ -6,6 +6,7 @@ import os
 import logging
 from pathlib import Path
 from io import BytesIO
+import base64
 import json
 from pydantic import BaseModel, Field, ConfigDict, EmailStr
 from typing import List, Optional, Dict, Any
@@ -34,12 +35,18 @@ from whatsapp_utils import (
     EVOLUTION_API_KEY,
     EVOLUTION_API_URL,
     EVOLUTION_INSTANCE,
+    add_group_participant,
+    format_phone_for_whatsapp,
+    get_group_participants,
+    normalize_whatsapp_jid,
+    send_whatsapp_media,
     send_whatsapp_text,
 )
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 WHATSAPP_BOT_NUMBER = os.environ.get("WHATSAPP_BOT_NUMBER", os.environ.get("BOT_NUMBER", ""))
+ELIOS_WHATSAPP_GROUP_JID = os.environ.get("ELIOS_WHATSAPP_GROUP_JID", "")
 ENV = os.environ.get('ENV', 'development').lower()
 
 # MongoDB connection
@@ -204,6 +211,10 @@ class UserResponse(BaseModel):
     elios_summary: Optional[str] = None
     profile_photo_url: Optional[str] = None
     whatsapp: Optional[str] = None
+    whatsapp_in_elios_group: Optional[bool] = None
+
+class AddUserToWhatsappGroupPayload(BaseModel):
+    biography: str = Field(min_length=5, max_length=600)
 
 class UserUpdate(BaseModel):
     full_name: Optional[str] = None
@@ -1791,6 +1802,33 @@ async def _send_chatbot_whatsapp_message(target_phone: str, text: str):
     except Exception as exc:
         logger.error(f"Erro crítico: Falha ao enviar resposta via Evolution API para {clean_phone}. Detalhes: {str(exc)}")
 
+
+def _parse_whatsapp_group_membership(participant_jids: set[str], whatsapp: Optional[str]) -> bool:
+    if not isinstance(whatsapp, str) or not whatsapp.strip():
+        return False
+    normalized = normalize_whatsapp_jid(whatsapp)
+    return bool(normalized and normalized in participant_jids)
+
+
+def _resolve_profile_photo_media(profile_photo_url: Optional[str]) -> Optional[str]:
+    if not isinstance(profile_photo_url, str) or not profile_photo_url.strip():
+        return None
+
+    if profile_photo_url.startswith("http://") or profile_photo_url.startswith("https://"):
+        return profile_photo_url
+
+    local_url = profile_photo_url.strip()
+    if not local_url.startswith("/uploads/"):
+        return None
+
+    local_path = ROOT_DIR / local_url.lstrip("/")
+    if not local_path.exists() or not local_path.is_file():
+        return None
+
+    content = local_path.read_bytes()
+    encoded = base64.b64encode(content).decode("utf-8")
+    return f"data:image/jpeg;base64,{encoded}"
+
 # ==================== ROUTES ====================
 
 @api_router.get("/")
@@ -2091,7 +2129,20 @@ async def reset_password(payload: ResetPasswordRequest):
 async def list_users(admin: dict = Depends(get_admin_user)):
     """List all users (admin only)"""
     users = await db.users.find({}, {"_id": 0, "password_hash": 0}).to_list(1000)
-    return [UserResponse(**u) for u in users]
+    participant_jids: set[str] = set()
+    if ELIOS_WHATSAPP_GROUP_JID and EVOLUTION_API_KEY:
+        try:
+            participant_jids = await get_group_participants(ELIOS_WHATSAPP_GROUP_JID)
+        except Exception as exc:
+            logger.warning("Falha ao carregar membros do grupo WhatsApp do ELIOS: %s", str(exc))
+
+    results: List[UserResponse] = []
+    for user in users:
+        user["whatsapp_in_elios_group"] = _parse_whatsapp_group_membership(
+            participant_jids, user.get("whatsapp")
+        )
+        results.append(UserResponse(**user))
+    return results
 
 @api_router.post("/admin/users", response_model=UserResponse)
 async def create_user_by_admin(payload: AdminUserCreate, admin: dict = Depends(get_admin_user)):
@@ -2337,6 +2388,60 @@ async def update_user_profile_photo(
         "message": "Foto de perfil atualizada com sucesso",
         "profile_photo_url": profile_photo_url
     }
+
+
+@api_router.post("/admin/users/{user_id}/whatsapp-group")
+async def add_user_to_elios_whatsapp_group(
+    user_id: str,
+    payload: AddUserToWhatsappGroupPayload,
+    admin: dict = Depends(get_admin_user),
+):
+    if not ELIOS_WHATSAPP_GROUP_JID:
+        raise HTTPException(status_code=503, detail="Grupo do WhatsApp do ELIOS não configurado.")
+    if not EVOLUTION_API_KEY:
+        raise HTTPException(status_code=503, detail="Integração com Evolution API não configurada.")
+
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+    clean_phone = format_phone_for_whatsapp(user.get("whatsapp", ""))
+    if len(clean_phone) < 12:
+        raise HTTPException(status_code=400, detail="Usuário não possui WhatsApp válido cadastrado.")
+
+    participant_jids = await get_group_participants(ELIOS_WHATSAPP_GROUP_JID)
+    normalized_jid = normalize_whatsapp_jid(clean_phone)
+    if normalized_jid in participant_jids:
+        raise HTTPException(status_code=409, detail="Usuário já está no grupo do WhatsApp.")
+
+    await add_group_participant(ELIOS_WHATSAPP_GROUP_JID, clean_phone)
+
+    bio = payload.biography.strip()
+    profile_media = _resolve_profile_photo_media(user.get("profile_photo_url"))
+    caption = f"👋 Novo membro no grupo: {user.get('full_name', 'Usuário')}\n\n📝 Bio: {bio}"
+
+    if profile_media:
+        await send_whatsapp_media(
+            recipient=ELIOS_WHATSAPP_GROUP_JID,
+            media=profile_media,
+            caption=caption,
+            filename=f"{user_id}_profile.jpg",
+        )
+    else:
+        await send_whatsapp_text(ELIOS_WHATSAPP_GROUP_JID, caption)
+
+    await db.whatsapp_group_invites.insert_one(
+        {
+            "id": str(uuid.uuid4()),
+            "user_id": user_id,
+            "group_jid": ELIOS_WHATSAPP_GROUP_JID,
+            "biography": bio,
+            "added_by_admin_id": admin.get("id"),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+    )
+
+    return {"message": "Usuário adicionado ao grupo e apresentação enviada com sucesso."}
 
 @api_router.delete("/admin/users/{user_id}")
 async def delete_user(user_id: str, admin: dict = Depends(get_admin_user)):
