@@ -40,6 +40,7 @@ from whatsapp_utils import (
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 WHATSAPP_BOT_NUMBER = os.environ.get("WHATSAPP_BOT_NUMBER", os.environ.get("BOT_NUMBER", ""))
+ENV = os.environ.get('ENV', 'development').lower()
 
 # MongoDB connection
 mongo_url = os.environ['MONGO_ATLAS_URI']
@@ -56,6 +57,13 @@ JWT_COOKIE_DOMAIN = os.environ.get("JWT_COOKIE_DOMAIN") or None
 JWT_COOKIE_SAMESITE = os.environ.get("JWT_COOKIE_SAMESITE", "lax").lower()
 JWT_COOKIE_SECURE = os.environ.get("JWT_COOKIE_SECURE", "true").lower() == "true"
 ALLOWED_SAMESITE_VALUES = {"lax", "strict", "none"}
+
+if ENV == "production":
+    # Em produção (Cloud Run + frontend em domínio diferente/subdomínio), o cookie
+    # precisa ser explícito para sobreviver às políticas modernas do navegador.
+    JWT_COOKIE_SECURE = True
+    JWT_COOKIE_SAMESITE = "none"
+    JWT_COOKIE_DOMAIN = JWT_COOKIE_DOMAIN or os.environ.get("JWT_COOKIE_BASE_DOMAIN", ".hutooeducacao.com")
 
 if JWT_COOKIE_SAMESITE not in ALLOWED_SAMESITE_VALUES:
     raise RuntimeError("JWT_COOKIE_SAMESITE inválido. Use: lax, strict ou none.")
@@ -77,6 +85,13 @@ if FRONTEND_URL not in CORS_ORIGINS:
     CORS_ORIGINS.append(FRONTEND_URL)
 if '*' in CORS_ORIGINS:
     raise RuntimeError('CORS_ORIGINS não pode conter "*" quando cookies com credenciais estão habilitados.')
+if ENV == "production":
+    invalid_origins = [origin for origin in CORS_ORIGINS if not origin.startswith("https://")]
+    if invalid_origins:
+        raise RuntimeError(
+            "Em produção, CORS_ORIGINS deve conter apenas URLs https exatas do frontend. "
+            f"Inválidas: {', '.join(invalid_origins)}"
+        )
 
 # AI Configuration (Groq only)
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY', '')
@@ -93,7 +108,6 @@ FRONTEND_RESET_PASSWORD_URL = os.environ.get("FRONTEND_RESET_PASSWORD_URL", "")
 RESET_PASSWORD_TTL_MINUTES = int(os.environ.get("RESET_PASSWORD_TTL_MINUTES", "30"))
 
 # Upload Configuration
-ENV = os.environ.get('ENV', 'development').lower()
 UPLOAD_DIR_LOCAL = Path(os.environ.get('UPLOAD_DIR_LOCAL', ROOT_DIR / 'uploads/profile_photos'))
 R2_ACCESS_KEY = os.environ.get('R2_ACCESS_KEY', '')
 R2_SECRET_KEY = os.environ.get('R2_SECRET_KEY', '')
