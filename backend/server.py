@@ -63,7 +63,9 @@ if ENV == "production":
     # precisa ser explícito para sobreviver às políticas modernas do navegador.
     JWT_COOKIE_SECURE = True
     JWT_COOKIE_SAMESITE = "none"
-    JWT_COOKIE_DOMAIN = JWT_COOKIE_DOMAIN or os.environ.get("JWT_COOKIE_BASE_DOMAIN", ".hutooeducacao.com")
+    # Domain deve ser opcional: quando ausente, o navegador cria cookie host-only
+    # para o domínio exato da API, evitando descartes por domínio incompatível.
+    JWT_COOKIE_DOMAIN = JWT_COOKIE_DOMAIN or os.environ.get("JWT_COOKIE_BASE_DOMAIN") or None
 
 if JWT_COOKIE_SAMESITE not in ALLOWED_SAMESITE_VALUES:
     raise RuntimeError("JWT_COOKIE_SAMESITE inválido. Use: lax, strict ou none.")
@@ -684,9 +686,28 @@ def decode_token(token: str) -> dict:
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Token inválido")
 
+
+def _extract_bearer_token(request: Request) -> Optional[str]:
+    auth_header = request.headers.get("authorization", "")
+    if not auth_header:
+        return None
+    parts = auth_header.split(" ", 1)
+    if len(parts) != 2:
+        return None
+    scheme, token = parts[0].lower(), parts[1].strip()
+    if scheme != "bearer" or not token:
+        return None
+    return token
+
+
+def _extract_auth_token(request: Request) -> Optional[str]:
+    # Prefer cookie for backward compatibility; fallback to Bearer for browsers
+    # that block third-party cookies when frontend and API are on different domains.
+    return request.cookies.get(JWT_COOKIE_NAME) or _extract_bearer_token(request)
+
 async def get_current_user(request: Request):
     """Get the current authenticated user"""
-    token = request.cookies.get(JWT_COOKIE_NAME)
+    token = _extract_auth_token(request)
     if not token:
         raise HTTPException(status_code=401, detail="Não autenticado")
     payload = decode_token(token)
@@ -1936,7 +1957,9 @@ async def login(credentials: UserLogin, request: Request, response: Response):
             "form_completed": user.get("form_completed", False),
             "elios_summary": user.get("elios_summary"),
             "profile_photo_url": user.get("profile_photo_url")
-        }
+        },
+        "access_token": token,
+        "token_type": "bearer",
     }
 
 @api_router.get("/auth/me", response_model=UserResponse)
@@ -1957,7 +1980,7 @@ async def get_me(user: dict = Depends(get_current_user)):
 @api_router.post("/auth/logout")
 async def logout(request: Request, response: Response):
     """Clear auth cookie."""
-    token = request.cookies.get(JWT_COOKIE_NAME)
+    token = _extract_auth_token(request)
     if token:
         try:
             payload = decode_token(token)
