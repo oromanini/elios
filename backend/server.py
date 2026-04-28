@@ -2794,10 +2794,14 @@ async def get_dashboard_stats(user: dict = Depends(get_current_user)):
             "goals": total,
             "completed": completed
         })
+
+    filled_pillars = sum(1 for p in pillars_order if pillar_data.get(p, {}).get("filled"))
     
     return {
         "pillars": pillar_data,
         "radar_data": radar_data,
+        "filled_pillars": filled_pillars,
+        "total_pillars": len(pillars_order),
         "total_goals": sum(g["count"] for g in goals_by_pillar),
         "completed_goals": sum(g["completed"] for g in goals_by_pillar)
     }
