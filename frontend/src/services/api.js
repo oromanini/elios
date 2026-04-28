@@ -101,7 +101,8 @@ export const goalsAPI = {
   create: (data) => api.post('/goals', data),
   update: (id, data) => api.put(`/goals/${id}`, data),
   delete: (id) => api.delete(`/goals/${id}`),
-  getHistory: (id) => api.get(`/goals/${id}/history`)
+  getHistory: (id) => api.get(`/goals/${id}/history`),
+  getWeeklyProgress: (params = {}) => api.get('/goals/weekly-progress', { params })
 };
 
 // AI API
@@ -130,7 +131,9 @@ export const adminAPI = {
   addAIKnowledge: (data) => api.post('/admin/ai/knowledge', data),
   deleteAIKnowledge: (id) => api.delete(`/admin/ai/knowledge/${id}`),
   getMetadata: () => api.get('/admin/metadata'),
-  updateMetadata: (data) => api.put('/admin/metadata', data)
+  updateMetadata: (data) => api.put('/admin/metadata', data),
+  getWeeklyProgressMonitor: () => api.get('/admin/weekly-progress-monitor'),
+  getWeeklyProgressCycle: (userId) => api.get(`/admin/weekly-progress-cycle/${userId}`)
 };
 
 // Dashboard API
