@@ -52,6 +52,17 @@ JWT_ALGORITHM = "HS256"
 JWT_EXP_HOURS = int(os.environ.get("JWT_EXP_HOURS", "12"))
 JWT_COOKIE_NAME = os.environ.get("JWT_COOKIE_NAME", "elios_token")
 JWT_COOKIE_MAX_AGE = JWT_EXP_HOURS * 3600
+JWT_COOKIE_DOMAIN = os.environ.get("JWT_COOKIE_DOMAIN") or None
+JWT_COOKIE_SAMESITE = os.environ.get("JWT_COOKIE_SAMESITE", "lax").lower()
+JWT_COOKIE_SECURE = os.environ.get("JWT_COOKIE_SECURE", "true").lower() == "true"
+ALLOWED_SAMESITE_VALUES = {"lax", "strict", "none"}
+
+if JWT_COOKIE_SAMESITE not in ALLOWED_SAMESITE_VALUES:
+    raise RuntimeError("JWT_COOKIE_SAMESITE inválido. Use: lax, strict ou none.")
+if JWT_COOKIE_SAMESITE == "none" and not JWT_COOKIE_SECURE:
+    raise RuntimeError("JWT_COOKIE_SECURE deve ser true quando JWT_COOKIE_SAMESITE=none.")
+
+
 def normalize_origin(origin: str) -> str:
     return origin.strip().rstrip("/")
 
@@ -598,11 +609,46 @@ async def upload_profile_picture(user_id: str, file: UploadFile) -> str:
 
     raise HTTPException(status_code=500, detail="ENV inválido para upload de imagem.")
 
-def create_token(user_id: str) -> str:
+def _build_cookie_security_config(request: Optional[Request] = None) -> Dict[str, Any]:
+    """Build cookie security settings with safe defaults and HTTPS awareness."""
+    secure = JWT_COOKIE_SECURE
+    if request is not None and request.url.scheme != "https" and ENV != "production":
+        secure = False
+
+    samesite = JWT_COOKIE_SAMESITE
+    if samesite == "none" and not secure:
+        samesite = "lax"
+
+    return {
+        "secure": secure,
+        "samesite": samesite,
+        "domain": JWT_COOKIE_DOMAIN,
+    }
+
+
+async def create_user_session(user_id: str, request: Optional[Request] = None) -> str:
+    session_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc)
+    session_doc = {
+        "id": session_id,
+        "user_id": user_id,
+        "created_at": now.isoformat(),
+        "expires_at": (now + timedelta(hours=JWT_EXP_HOURS)).isoformat(),
+        "last_seen_at": now.isoformat(),
+        "revoked_at": None,
+        "ip_address": request.client.host if request and request.client else None,
+        "user_agent": request.headers.get("user-agent") if request else None,
+    }
+    await db.sessions.insert_one(session_doc)
+    return session_id
+
+
+def create_token(user_id: str, session_id: str) -> str:
     """Create a JWT token"""
     now = datetime.now(timezone.utc)
     payload = {
         "user_id": user_id,
+        "sid": session_id,
         "iat": now,
         "exp": now + timedelta(hours=JWT_EXP_HOURS),
     }
@@ -624,6 +670,27 @@ async def get_current_user(request: Request):
     if not token:
         raise HTTPException(status_code=401, detail="Não autenticado")
     payload = decode_token(token)
+    session_id = payload.get("sid")
+    if not session_id:
+        raise HTTPException(status_code=401, detail="Sessão inválida")
+
+    session = await db.sessions.find_one({"id": session_id}, {"_id": 0})
+    if not session or session.get("revoked_at"):
+        raise HTTPException(status_code=401, detail="Sessão encerrada")
+
+    try:
+        session_expiry = datetime.fromisoformat(session["expires_at"])
+    except (KeyError, ValueError):
+        raise HTTPException(status_code=401, detail="Sessão inválida")
+
+    if session_expiry < datetime.now(timezone.utc):
+        raise HTTPException(status_code=401, detail="Sessão expirada")
+
+    await db.sessions.update_one(
+        {"id": session_id},
+        {"$set": {"last_seen_at": datetime.now(timezone.utc).isoformat()}}
+    )
+
     user = await db.users.find_one({"id": payload["user_id"]}, {"_id": 0})
     if not user:
         raise HTTPException(status_code=401, detail="Usuário não encontrado")
@@ -1825,16 +1892,19 @@ async def login(credentials: UserLogin, request: Request, response: Response):
         raise HTTPException(status_code=403, detail="Conta inativa. Aguarde aprovação do administrador.")
 
     clear_login_attempts(identity_key)
-    token = create_token(user["id"])
+    session_id = await create_user_session(user["id"], request)
+    token = create_token(user["id"], session_id)
+    cookie_security = _build_cookie_security_config(request)
 
     response.set_cookie(
         key=JWT_COOKIE_NAME,
         value=token,
         httponly=True,
-        secure=True,
-        samesite="none",
+        secure=cookie_security["secure"],
+        samesite=cookie_security["samesite"],
         max_age=JWT_COOKIE_MAX_AGE,
-        path="/"
+        path="/",
+        domain=cookie_security["domain"]
     )
 
     return {
@@ -1865,14 +1935,29 @@ async def get_me(user: dict = Depends(get_current_user)):
     )
 
 @api_router.post("/auth/logout")
-async def logout(response: Response):
+async def logout(request: Request, response: Response):
     """Clear auth cookie."""
+    token = request.cookies.get(JWT_COOKIE_NAME)
+    if token:
+        try:
+            payload = decode_token(token)
+            session_id = payload.get("sid")
+            if session_id:
+                await db.sessions.update_one(
+                    {"id": session_id},
+                    {"$set": {"revoked_at": datetime.now(timezone.utc).isoformat()}}
+                )
+        except HTTPException:
+            pass
+
+    cookie_security = _build_cookie_security_config(request)
     response.delete_cookie(
         key=JWT_COOKIE_NAME,
         path="/",
-        secure=True,
+        secure=cookie_security["secure"],
         httponly=True,
-        samesite="none"
+        samesite=cookie_security["samesite"],
+        domain=cookie_security["domain"]
     )
     return {"message": "Logout realizado com sucesso"}
 
