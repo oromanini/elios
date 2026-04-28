@@ -1825,6 +1825,12 @@ async def whatsapp_webhook(request: Request):
         return {"status": "ignored", "reason": "self_message"}
 
     remote_jid = _extract_remote_jid(payload_dict)
+    participant = payload_key.get("participant")
+
+    if (isinstance(remote_jid, str) and "@g.us" in remote_jid) or (isinstance(participant, str) and participant.strip()):
+        logger.info(f"Mensagem de grupo ignorada: {remote_jid}")
+        return {"status": "ignored", "reason": "group_message"}
+
     incoming_message = _extract_whatsapp_message(payload_dict)
     logger.info("Processamento: remoteJid='%s' | Msg='%s...'", remote_jid, incoming_message[:50])
 
