@@ -57,3 +57,20 @@ Serviços:
 
 Consulte `SECURITY_REVIEW.md` para prioridades e plano de mitigação.
 
+## CI de testes e bloqueio de merge
+
+Foi adicionado o workflow GitHub Actions `.github/workflows/tests.yml`, que executa:
+
+```bash
+pytest -q tests/test_auth_flow.py
+```
+
+em `pull_request` e `push` para `main`.
+
+Para **impedir merge quando teste falhar**, ative no GitHub:
+
+1. `Settings` → `Branches` → `Add branch protection rule`.
+2. Selecione a branch `main`.
+3. Marque **Require status checks to pass before merging**.
+4. Adicione o check obrigatório: **test-backend-auth** (job do workflow de testes).
+5. (Opcional, recomendado) marque **Require branches to be up to date before merging**.

@@ -46,7 +46,20 @@ export const AuthProvider = ({ children }) => {
     const response = await authAPI.login(email, password);
     const { user: userData } = response.data;
     setUser(userData);
-    return userData;
+
+    // Validação defensiva: garante que o cookie de sessão foi persistido pelo navegador.
+    try {
+      const me = await authAPI.getMe();
+      setUser(me.data);
+      return me.data;
+    } catch (error) {
+      clearAuthState();
+      const cookieBlockedError = new Error(
+        'Sessão não persistida no navegador. Verifique bloqueio de cookies e configurações de privacidade.'
+      );
+      cookieBlockedError.cause = error;
+      throw cookieBlockedError;
+    }
   };
 
   const logout = async () => {
