@@ -6,6 +6,7 @@ import os
 import logging
 from pathlib import Path
 from io import BytesIO
+import base64
 import json
 from pydantic import BaseModel, Field, ConfigDict, EmailStr
 from typing import List, Optional, Dict, Any
@@ -32,14 +33,20 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from nps_scheduler import process_nps_cycles, process_nps_reminders
 from whatsapp_utils import (
     EVOLUTION_API_KEY,
-    EVOLUTION_API_URL,
-    EVOLUTION_INSTANCE,
+    EVOLUTION_API_URL as DEFAULT_EVOLUTION_API_URL,
+    EVOLUTION_INSTANCE as DEFAULT_EVOLUTION_INSTANCE,
+    add_group_participant,
+    format_phone_for_whatsapp,
+    get_group_participants,
+    normalize_whatsapp_jid,
+    send_whatsapp_media,
     send_whatsapp_text,
 )
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 WHATSAPP_BOT_NUMBER = os.environ.get("WHATSAPP_BOT_NUMBER", os.environ.get("BOT_NUMBER", ""))
+ELIOS_WHATSAPP_GROUP_JID = os.environ.get("ELIOS_WHATSAPP_GROUP_JID", "")
 ENV = os.environ.get('ENV', 'development').lower()
 
 # MongoDB connection
@@ -204,6 +211,21 @@ class UserResponse(BaseModel):
     elios_summary: Optional[str] = None
     profile_photo_url: Optional[str] = None
     whatsapp: Optional[str] = None
+    whatsapp_in_elios_group: Optional[bool] = None
+
+class AddUserToWhatsappGroupPayload(BaseModel):
+    biography: str = Field(min_length=5, max_length=600)
+
+class MetadataEntry(BaseModel):
+    id: str
+    type: str
+    name: str
+    value: str
+
+class MetadataUpdateItem(BaseModel):
+    type: str
+    name: str
+    value: str
 
 class UserUpdate(BaseModel):
     full_name: Optional[str] = None
@@ -1361,6 +1383,41 @@ REGRAS DE ANÁLISE:
         )
 
 
+WHATSAPP_METADATA_NAMES = (
+    "EVOLUTION_API_URL",
+    "EVOLUTION_INSTANCE",
+    "ELIOS_WHATSAPP_GROUP_JID",
+)
+WHATSAPP_METADATA_TYPES = {
+    "EVOLUTION_API_URL": "url",
+    "EVOLUTION_INSTANCE": "string",
+    "ELIOS_WHATSAPP_GROUP_JID": "string",
+}
+
+
+async def get_metadata_map(names: List[str]) -> Dict[str, str]:
+    docs = await db.metadata.find(
+        {"name": {"$in": names}},
+        {"_id": 0, "name": 1, "value": 1},
+    ).to_list(length=len(names))
+    result: Dict[str, str] = {}
+    for doc in docs:
+        name = doc.get("name")
+        value = doc.get("value")
+        if isinstance(name, str) and isinstance(value, str):
+            result[name] = value
+    return result
+
+
+async def get_whatsapp_runtime_settings() -> Dict[str, str]:
+    values = await get_metadata_map(list(WHATSAPP_METADATA_NAMES))
+    return {
+        "api_url": values.get("EVOLUTION_API_URL", "").strip() or DEFAULT_EVOLUTION_API_URL,
+        "instance": values.get("EVOLUTION_INSTANCE", "").strip() or DEFAULT_EVOLUTION_INSTANCE,
+        "group_jid": values.get("ELIOS_WHATSAPP_GROUP_JID", "").strip() or ELIOS_WHATSAPP_GROUP_JID,
+    }
+
+
 async def _resolve_whatsapp_lid_sender(lid_jid: str) -> str:
     normalized_lid = lid_jid.strip()
     if not normalized_lid:
@@ -1373,11 +1430,12 @@ async def _resolve_whatsapp_lid_sender(lid_jid: str) -> str:
     if existing_user and existing_user.get("whatsapp"):
         return existing_user["whatsapp"]
 
+    settings = await get_whatsapp_runtime_settings()
     headers = {
         "apikey": EVOLUTION_API_KEY,
         "Content-Type": "application/json",
     }
-    endpoint = f"{EVOLUTION_API_URL}/chat/findContacts/{EVOLUTION_INSTANCE}"
+    endpoint = f"{settings['api_url']}/chat/findContacts/{settings['instance']}"
     payload = {
         "where": {
             "id": normalized_lid,
@@ -1508,11 +1566,12 @@ def _build_phone_jid(value: Any) -> str:
 
 
 async def sync_whatsapp_identities() -> int:
+    settings = await get_whatsapp_runtime_settings()
     headers = {
         "apikey": EVOLUTION_API_KEY,
         "Content-Type": "application/json",
     }
-    endpoint = f"{EVOLUTION_API_URL}/contacts/fetchContacts/{EVOLUTION_INSTANCE}"
+    endpoint = f"{settings['api_url']}/contacts/fetchContacts/{settings['instance']}"
     processed_count = 0
 
     async with httpx.AsyncClient(timeout=40.0) as client:
@@ -1786,10 +1845,43 @@ async def _send_chatbot_whatsapp_message(target_phone: str, text: str):
         return
 
     try:
-        await send_whatsapp_text(clean_phone, text)
+        settings = await get_whatsapp_runtime_settings()
+        await send_whatsapp_text(
+            clean_phone,
+            text,
+            api_url=settings["api_url"],
+            instance=settings["instance"],
+        )
         logger.info(f"Resposta do ELIOS enviada com sucesso para {clean_phone}")
     except Exception as exc:
         logger.error(f"Erro crítico: Falha ao enviar resposta via Evolution API para {clean_phone}. Detalhes: {str(exc)}")
+
+
+def _parse_whatsapp_group_membership(participant_jids: set[str], whatsapp: Optional[str]) -> bool:
+    if not isinstance(whatsapp, str) or not whatsapp.strip():
+        return False
+    normalized = normalize_whatsapp_jid(whatsapp)
+    return bool(normalized and normalized in participant_jids)
+
+
+def _resolve_profile_photo_media(profile_photo_url: Optional[str]) -> Optional[str]:
+    if not isinstance(profile_photo_url, str) or not profile_photo_url.strip():
+        return None
+
+    if profile_photo_url.startswith("http://") or profile_photo_url.startswith("https://"):
+        return profile_photo_url
+
+    local_url = profile_photo_url.strip()
+    if not local_url.startswith("/uploads/"):
+        return None
+
+    local_path = ROOT_DIR / local_url.lstrip("/")
+    if not local_path.exists() or not local_path.is_file():
+        return None
+
+    content = local_path.read_bytes()
+    encoded = base64.b64encode(content).decode("utf-8")
+    return f"data:image/jpeg;base64,{encoded}"
 
 # ==================== ROUTES ====================
 
@@ -2091,7 +2183,92 @@ async def reset_password(payload: ResetPasswordRequest):
 async def list_users(admin: dict = Depends(get_admin_user)):
     """List all users (admin only)"""
     users = await db.users.find({}, {"_id": 0, "password_hash": 0}).to_list(1000)
-    return [UserResponse(**u) for u in users]
+    participant_jids: set[str] = set()
+    whatsapp_settings = await get_whatsapp_runtime_settings()
+    if whatsapp_settings["group_jid"] and EVOLUTION_API_KEY:
+        try:
+            participant_jids = await get_group_participants(
+                whatsapp_settings["group_jid"],
+                api_url=whatsapp_settings["api_url"],
+                instance=whatsapp_settings["instance"],
+            )
+        except Exception as exc:
+            logger.warning("Falha ao carregar membros do grupo WhatsApp do ELIOS: %s", str(exc))
+
+    results: List[UserResponse] = []
+    for user in users:
+        user["whatsapp_in_elios_group"] = _parse_whatsapp_group_membership(
+            participant_jids, user.get("whatsapp")
+        )
+        results.append(UserResponse(**user))
+    return results
+
+
+@api_router.get("/admin/metadata", response_model=List[MetadataEntry])
+async def list_metadata(admin: dict = Depends(get_admin_user)):
+    _ = admin
+    stored_docs = await db.metadata.find(
+        {"name": {"$in": list(WHATSAPP_METADATA_NAMES)}},
+        {"_id": 0, "id": 1, "type": 1, "name": 1, "value": 1},
+    ).to_list(length=len(WHATSAPP_METADATA_NAMES))
+    docs_by_name = {
+        doc["name"]: doc
+        for doc in stored_docs
+        if isinstance(doc.get("name"), str)
+    }
+    fallback_values = await get_whatsapp_runtime_settings()
+    runtime_map = {
+        "EVOLUTION_API_URL": fallback_values["api_url"],
+        "EVOLUTION_INSTANCE": fallback_values["instance"],
+        "ELIOS_WHATSAPP_GROUP_JID": fallback_values["group_jid"],
+    }
+
+    response: List[MetadataEntry] = []
+    for name in WHATSAPP_METADATA_NAMES:
+        current = docs_by_name.get(name, {})
+        response.append(
+            MetadataEntry(
+                id=current.get("id") or str(uuid.uuid4()),
+                type=current.get("type") or WHATSAPP_METADATA_TYPES[name],
+                name=name,
+                value=current.get("value") or runtime_map.get(name, ""),
+            )
+        )
+    return response
+
+
+@api_router.put("/admin/metadata", response_model=List[MetadataEntry])
+async def update_metadata(items: List[MetadataUpdateItem], admin: dict = Depends(get_admin_user)):
+    _ = admin
+    if not items:
+        raise HTTPException(status_code=400, detail="Envie ao menos um item para atualização.")
+    for item in items:
+        if item.name not in WHATSAPP_METADATA_NAMES:
+            raise HTTPException(status_code=400, detail=f"Metadata inválida: {item.name}")
+
+    updated_names = set()
+    for item in items:
+        updated_names.add(item.name)
+        now_iso = datetime.now(timezone.utc).isoformat()
+        existing = await db.metadata.find_one({"name": item.name}, {"_id": 0, "id": 1})
+        await db.metadata.update_one(
+            {"name": item.name},
+            {
+                "$set": {
+                    "type": WHATSAPP_METADATA_TYPES[item.name],
+                    "name": item.name,
+                    "value": item.value.strip(),
+                    "updated_at": now_iso,
+                },
+                "$setOnInsert": {
+                    "id": existing.get("id") if existing else str(uuid.uuid4()),
+                    "created_at": now_iso,
+                },
+            },
+            upsert=True,
+        )
+
+    return await list_metadata(admin)
 
 @api_router.post("/admin/users", response_model=UserResponse)
 async def create_user_by_admin(payload: AdminUserCreate, admin: dict = Depends(get_admin_user)):
@@ -2337,6 +2514,78 @@ async def update_user_profile_photo(
         "message": "Foto de perfil atualizada com sucesso",
         "profile_photo_url": profile_photo_url
     }
+
+
+@api_router.post("/admin/users/{user_id}/whatsapp-group")
+async def add_user_to_elios_whatsapp_group(
+    user_id: str,
+    payload: AddUserToWhatsappGroupPayload,
+    admin: dict = Depends(get_admin_user),
+):
+    settings = await get_whatsapp_runtime_settings()
+
+    if not settings["group_jid"]:
+        raise HTTPException(status_code=503, detail="Grupo do WhatsApp do ELIOS não configurado.")
+    if not EVOLUTION_API_KEY:
+        raise HTTPException(status_code=503, detail="Integração com Evolution API não configurada.")
+
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+    clean_phone = format_phone_for_whatsapp(user.get("whatsapp", ""))
+    if len(clean_phone) < 12:
+        raise HTTPException(status_code=400, detail="Usuário não possui WhatsApp válido cadastrado.")
+
+    participant_jids = await get_group_participants(
+        settings["group_jid"],
+        api_url=settings["api_url"],
+        instance=settings["instance"],
+    )
+    normalized_jid = normalize_whatsapp_jid(clean_phone)
+    if normalized_jid in participant_jids:
+        raise HTTPException(status_code=409, detail="Usuário já está no grupo do WhatsApp.")
+
+    await add_group_participant(
+        settings["group_jid"],
+        clean_phone,
+        api_url=settings["api_url"],
+        instance=settings["instance"],
+    )
+
+    bio = payload.biography.strip()
+    profile_media = _resolve_profile_photo_media(user.get("profile_photo_url"))
+    caption = f"👋 Novo membro no grupo: {user.get('full_name', 'Usuário')}\n\n📝 Bio: {bio}"
+
+    if profile_media:
+        await send_whatsapp_media(
+            recipient=settings["group_jid"],
+            media=profile_media,
+            caption=caption,
+            filename=f"{user_id}_profile.jpg",
+            api_url=settings["api_url"],
+            instance=settings["instance"],
+        )
+    else:
+        await send_whatsapp_text(
+            settings["group_jid"],
+            caption,
+            api_url=settings["api_url"],
+            instance=settings["instance"],
+        )
+
+    await db.whatsapp_group_invites.insert_one(
+        {
+            "id": str(uuid.uuid4()),
+            "user_id": user_id,
+            "group_jid": settings["group_jid"],
+            "biography": bio,
+            "added_by_admin_id": admin.get("id"),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+    )
+
+    return {"message": "Usuário adicionado ao grupo e apresentação enviada com sucesso."}
 
 @api_router.delete("/admin/users/{user_id}")
 async def delete_user(user_id: str, admin: dict = Depends(get_admin_user)):

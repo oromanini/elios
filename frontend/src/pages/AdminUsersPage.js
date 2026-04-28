@@ -20,7 +20,8 @@ import {
   UserX,
   Shield,
   User,
-  Camera
+  Camera,
+  UserPlus
 } from 'lucide-react';
 
 const applyPhoneMask = (value) => {
@@ -54,6 +55,10 @@ const AdminUsersPage = () => {
   });
   const [editPhotoFile, setEditPhotoFile] = useState(null);
   const [editPhotoPreview, setEditPhotoPreview] = useState(null);
+  const [whatsappDialogOpen, setWhatsappDialogOpen] = useState(false);
+  const [whatsappTargetUser, setWhatsappTargetUser] = useState(null);
+  const [whatsappBio, setWhatsappBio] = useState('');
+  const [isSubmittingWhatsapp, setIsSubmittingWhatsapp] = useState(false);
 
   useEffect(() => {
     loadUsers();
@@ -143,6 +148,33 @@ const AdminUsersPage = () => {
     } catch (error) {
       const detail = error?.response?.data?.detail;
       toast.error(typeof detail === 'string' ? detail : 'Erro ao criar admin');
+    }
+  };
+
+  const handleOpenWhatsappDialog = (user) => {
+    setWhatsappTargetUser(user);
+    setWhatsappBio('');
+    setWhatsappDialogOpen(true);
+  };
+
+  const handleAddUserToWhatsappGroup = async () => {
+    if (!whatsappTargetUser || !whatsappBio.trim()) return;
+
+    try {
+      setIsSubmittingWhatsapp(true);
+      await adminAPI.addUserToWhatsappGroup(whatsappTargetUser.id, {
+        biography: whatsappBio.trim()
+      });
+      toast.success('Usuário adicionado ao grupo com sucesso');
+      setWhatsappDialogOpen(false);
+      setWhatsappTargetUser(null);
+      setWhatsappBio('');
+      loadUsers();
+    } catch (error) {
+      const detail = error?.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : 'Erro ao adicionar usuário no grupo');
+    } finally {
+      setIsSubmittingWhatsapp(false);
     }
   };
 
@@ -407,6 +439,21 @@ const AdminUsersPage = () => {
                           <Button
                             size="icon"
                             variant="ghost"
+                            className="h-8 w-8 text-slate-400 hover:text-green-400 disabled:text-slate-600"
+                            data-testid={`add-whatsapp-group-${user.id}`}
+                            disabled={!user.whatsapp || user.whatsapp_in_elios_group}
+                            title={
+                              user.whatsapp_in_elios_group
+                                ? 'Usuário já está no grupo do WhatsApp'
+                                : (!user.whatsapp ? 'Usuário sem WhatsApp cadastrado' : 'Adicionar ao grupo do WhatsApp')
+                            }
+                            onClick={() => handleOpenWhatsappDialog(user)}
+                          >
+                            <UserPlus size={16} />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
                             className="h-8 w-8 text-slate-400 hover:text-primary"
                             data-testid={`edit-user-${user.id}`}
                             onClick={() => handleOpenEditDialog(user)}
@@ -579,6 +626,46 @@ const AdminUsersPage = () => {
                 disabled={!editData.full_name || !editData.email}
               >
                 Salvar alterações
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={whatsappDialogOpen} onOpenChange={setWhatsappDialogOpen}>
+          <DialogContent className="glass-card border-white/10">
+            <DialogHeader>
+              <DialogTitle className="text-white">Adicionar usuário ao grupo do WhatsApp</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              <p className="text-sm text-slate-300">
+                Usuário: <span className="font-semibold text-white">{whatsappTargetUser?.full_name || '-'}</span>
+              </p>
+              <Input
+                readOnly
+                value={whatsappTargetUser?.whatsapp || ''}
+                className="bg-slate-900/50 border-slate-700 text-white"
+              />
+              <textarea
+                value={whatsappBio}
+                onChange={(event) => setWhatsappBio(event.target.value)}
+                placeholder="Escreva uma breve biografia para apresentar o usuário no grupo..."
+                className="min-h-[120px] w-full rounded-md border border-slate-700 bg-slate-900/50 p-3 text-sm text-white placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setWhatsappDialogOpen(false)}
+                className="border-slate-700 text-white"
+                disabled={isSubmittingWhatsapp}
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={handleAddUserToWhatsappGroup}
+                disabled={!whatsappBio.trim() || isSubmittingWhatsapp}
+              >
+                {isSubmittingWhatsapp ? 'Enviando...' : 'Adicionar ao grupo'}
               </Button>
             </DialogFooter>
           </DialogContent>

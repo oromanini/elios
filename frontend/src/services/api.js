@@ -124,10 +124,13 @@ export const adminAPI = {
       'Content-Type': 'multipart/form-data'
     }
   }),
+  addUserToWhatsappGroup: (id, data) => api.post(`/admin/users/${id}/whatsapp-group`, data),
   deleteUser: (id) => api.delete(`/admin/users/${id}`),
   getAIKnowledge: () => api.get('/admin/ai/knowledge'),
   addAIKnowledge: (data) => api.post('/admin/ai/knowledge', data),
-  deleteAIKnowledge: (id) => api.delete(`/admin/ai/knowledge/${id}`)
+  deleteAIKnowledge: (id) => api.delete(`/admin/ai/knowledge/${id}`),
+  getMetadata: () => api.get('/admin/metadata'),
+  updateMetadata: (data) => api.put('/admin/metadata', data)
 };
 
 // Dashboard API
