@@ -53,6 +53,7 @@ const Sidebar = () => {
     { path: '/admin/nps', icon: BarChart3, label: 'Gestão NPS' },
     { path: '/admin/perguntas', icon: FileText, label: 'Perguntas' },
     { path: '/admin/elios', icon: Brain, label: 'Treinar ELIOS' },
+    { path: '/admin/configuracoes', icon: Settings, label: 'Configurações' },
   ];
 
   const NavItem = ({ item }) => {

@@ -16,7 +16,12 @@ def format_phone_for_whatsapp(phone: str) -> str:
     return clean
 
 
-async def send_whatsapp_text(recipient: str, text: str):
+async def send_whatsapp_text(
+    recipient: str,
+    text: str,
+    api_url: str = EVOLUTION_API_URL,
+    instance: str = EVOLUTION_INSTANCE,
+):
     clean_phone = re.sub(r"\D", "", str(recipient))
 
     headers = {
@@ -29,7 +34,7 @@ async def send_whatsapp_text(recipient: str, text: str):
         "delay": 0,
         "linkPreview": False,
     }
-    endpoint = f"{EVOLUTION_API_URL}/message/sendText/{EVOLUTION_INSTANCE}"
+    endpoint = f"{api_url}/message/sendText/{instance}"
     async with httpx.AsyncClient(timeout=20.0) as client:
         response = await client.post(endpoint, json=payload, headers=headers)
         response.raise_for_status()
@@ -42,9 +47,13 @@ def normalize_whatsapp_jid(value: str) -> str:
     return f"{digits}@s.whatsapp.net"
 
 
-async def get_group_participants(group_jid: str) -> Set[str]:
+async def get_group_participants(
+    group_jid: str,
+    api_url: str = EVOLUTION_API_URL,
+    instance: str = EVOLUTION_INSTANCE,
+) -> Set[str]:
     headers = {"apikey": EVOLUTION_API_KEY}
-    endpoint = f"{EVOLUTION_API_URL}/group/participants/{EVOLUTION_INSTANCE}"
+    endpoint = f"{api_url}/group/participants/{instance}"
     params = {"groupJid": group_jid}
     async with httpx.AsyncClient(timeout=20.0) as client:
         response = await client.get(endpoint, headers=headers, params=params)
@@ -62,7 +71,12 @@ async def get_group_participants(group_jid: str) -> Set[str]:
     return normalized
 
 
-async def add_group_participant(group_jid: str, participant_phone: str):
+async def add_group_participant(
+    group_jid: str,
+    participant_phone: str,
+    api_url: str = EVOLUTION_API_URL,
+    instance: str = EVOLUTION_INSTANCE,
+):
     headers = {
         "apikey": EVOLUTION_API_KEY,
         "Content-Type": "application/json",
@@ -72,13 +86,20 @@ async def add_group_participant(group_jid: str, participant_phone: str):
         "action": "add",
         "participants": [re.sub(r"\D", "", str(participant_phone or ""))],
     }
-    endpoint = f"{EVOLUTION_API_URL}/group/updateParticipant/{EVOLUTION_INSTANCE}"
+    endpoint = f"{api_url}/group/updateParticipant/{instance}"
     async with httpx.AsyncClient(timeout=20.0) as client:
         response = await client.post(endpoint, json=payload, headers=headers)
         response.raise_for_status()
 
 
-async def send_whatsapp_media(recipient: str, media: str, caption: str, filename: str = "profile.jpg"):
+async def send_whatsapp_media(
+    recipient: str,
+    media: str,
+    caption: str,
+    filename: str = "profile.jpg",
+    api_url: str = EVOLUTION_API_URL,
+    instance: str = EVOLUTION_INSTANCE,
+):
     headers = {
         "apikey": EVOLUTION_API_KEY,
         "Content-Type": "application/json",
@@ -93,7 +114,7 @@ async def send_whatsapp_media(recipient: str, media: str, caption: str, filename
         "delay": 0,
         "linkPreview": False,
     }
-    endpoint = f"{EVOLUTION_API_URL}/message/sendMedia/{EVOLUTION_INSTANCE}"
+    endpoint = f"{api_url}/message/sendMedia/{instance}"
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(endpoint, json=payload, headers=headers)
         response.raise_for_status()

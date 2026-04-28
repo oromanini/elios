@@ -20,6 +20,7 @@ import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import NPSFillPage from './pages/NPSFillPage';
 import NpsHistory from './pages/NpsHistory';
 import AdminNpsDashboard from './pages/AdminNpsDashboard';
+import AdminSettingsPage from './pages/AdminSettingsPage';
 
 // Protected Route Component
 const ProtectedRoute = ({ children, adminOnly = false }) => {
@@ -170,6 +171,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute adminOnly>
             <AdminMentoradosPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/configuracoes"
+        element={
+          <ProtectedRoute adminOnly>
+            <AdminSettingsPage />
           </ProtectedRoute>
         }
       />
