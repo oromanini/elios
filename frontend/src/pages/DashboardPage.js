@@ -37,12 +37,22 @@ const DashboardPage = () => {
 
   const loadData = async () => {
     try {
-      const [statsRes, responsesRes] = await Promise.all([
+      const [statsResult, responsesResult] = await Promise.allSettled([
         dashboardAPI.getStats(),
         formAPI.getResponses()
       ]);
-      setStats(statsRes.data);
-      setResponses(responsesRes.data);
+
+      if (statsResult.status === 'fulfilled') {
+        setStats(statsResult.value.data);
+      } else {
+        throw statsResult.reason;
+      }
+
+      if (responsesResult.status === 'fulfilled') {
+        setResponses(responsesResult.value.data);
+      } else {
+        setResponses([]);
+      }
     } catch (error) {
       console.error('Error loading dashboard:', error);
       toast.error('Erro ao carregar dashboard');

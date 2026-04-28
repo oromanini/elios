@@ -2759,8 +2759,8 @@ async def get_dashboard_stats(user: dict = Depends(get_current_user)):
     pillar_data = {}
     for resp in responses:
         question = await db.questions.find_one({"id": resp["question_id"]}, {"_id": 0})
-        if question:
-            pillar = question["pillar"]
+        pillar = (question or {}).get("pillar")
+        if pillar:
             if pillar not in pillar_data:
                 pillar_data[pillar] = {"filled": True, "goals_count": 0, "completed": 0}
     
