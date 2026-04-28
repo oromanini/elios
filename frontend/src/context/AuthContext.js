@@ -1,5 +1,10 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { authAPI, AUTH_UNAUTHORIZED_EVENT } from '../services/api';
+import {
+  authAPI,
+  AUTH_UNAUTHORIZED_EVENT,
+  clearAuthToken,
+  setAuthToken,
+} from '../services/api';
 
 const AuthContext = createContext(null);
 
@@ -9,6 +14,7 @@ export const AuthProvider = ({ children }) => {
 
   const clearAuthState = () => {
     setUser(null);
+    clearAuthToken();
   };
 
   const checkAuth = useCallback(async () => {
@@ -44,7 +50,8 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (email, password) => {
     const response = await authAPI.login(email, password);
-    const { user: userData } = response.data;
+    const { user: userData, access_token: accessToken } = response.data;
+    setAuthToken(accessToken);
     setUser(userData);
 
     // Validação defensiva: confirma persistência do cookie sem bloquear login em falhas transitórias.

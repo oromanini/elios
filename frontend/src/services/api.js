@@ -4,7 +4,35 @@ import { getBackendBaseUrl } from '../config/apiBaseUrl';
 
 const API_URL = getBackendBaseUrl();
 export const AUTH_UNAUTHORIZED_EVENT = 'elios:auth-unauthorized';
+export const AUTH_TOKEN_STORAGE_KEY = 'elios_auth_token';
 axios.defaults.withCredentials = true;
+
+export const getAuthToken = () => {
+  try {
+    return localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
+  } catch (error) {
+    return null;
+  }
+};
+
+export const setAuthToken = (token) => {
+  if (!token) {
+    return;
+  }
+  try {
+    localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
+  } catch (error) {
+    // noop
+  }
+};
+
+export const clearAuthToken = () => {
+  try {
+    localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+  } catch (error) {
+    // noop
+  }
+};
 
 const api = axios.create({
   baseURL: `${API_URL}/api`,
@@ -14,11 +42,21 @@ const api = axios.create({
   }
 });
 
+api.interceptors.request.use((config) => {
+  const token = getAuthToken();
+  if (token) {
+    config.headers = config.headers || {};
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
 // Handle auth errors
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
+      clearAuthToken();
       window.dispatchEvent(new CustomEvent(AUTH_UNAUTHORIZED_EVENT));
     }
     return Promise.reject(error);
