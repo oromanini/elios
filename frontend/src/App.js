@@ -21,6 +21,8 @@ import NPSFillPage from './pages/NPSFillPage';
 import NpsHistory from './pages/NpsHistory';
 import AdminNpsDashboard from './pages/AdminNpsDashboard';
 import AdminSettingsPage from './pages/AdminSettingsPage';
+import WeeklyProgressPage from './pages/WeeklyProgressPage';
+import AdminWeeklyProgressPage from './pages/AdminWeeklyProgressPage';
 
 // Protected Route Component
 const ProtectedRoute = ({ children, adminOnly = false }) => {
@@ -130,6 +132,14 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
+      <Route
+        path="/dashboard/weekly-progress"
+        element={
+          <ProtectedRoute>
+            <WeeklyProgressPage />
+          </ProtectedRoute>
+        }
+      />
 
       {/* Admin Routes */}
       <Route
@@ -179,6 +189,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute adminOnly>
             <AdminSettingsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/weekly-progress"
+        element={
+          <ProtectedRoute adminOnly>
+            <AdminWeeklyProgressPage />
           </ProtectedRoute>
         }
       />

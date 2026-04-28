@@ -17,7 +17,8 @@ import {
   FileText,
   ClipboardList,
   BarChart3,
-  ListChecks
+  ListChecks,
+  TrendingUp
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { getBackendBaseUrl } from '../config/apiBaseUrl';
@@ -43,6 +44,7 @@ const Sidebar = () => {
     { path: '/pilares', icon: Hexagon, label: 'Pilares' },
     { path: '/metas', icon: Target, label: 'Metas' },
     { path: '/historico-nps', icon: ListChecks, label: 'Histórico NPS' },
+    { path: '/dashboard/weekly-progress', icon: TrendingUp, label: 'Progresso Semanal' },
   ];
 
   const navItems = isAdmin() ? baseNavItems : [...baseNavItems, ...userOnlyNavItems];
@@ -54,6 +56,7 @@ const Sidebar = () => {
     { path: '/admin/perguntas', icon: FileText, label: 'Perguntas' },
     { path: '/admin/elios', icon: Brain, label: 'Treinar ELIOS' },
     { path: '/admin/configuracoes', icon: Settings, label: 'Configurações' },
+    { path: '/admin/weekly-progress', icon: TrendingUp, label: 'Progresso Semanal' },
   ];
 
   const NavItem = ({ item }) => {

@@ -31,6 +31,7 @@ from bson.errors import InvalidId
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from nps_scheduler import process_nps_cycles, process_nps_reminders
+from goals_scheduler import process_weekly_goal_reminders
 from whatsapp_utils import (
     EVOLUTION_API_KEY,
     EVOLUTION_API_URL as DEFAULT_EVOLUTION_API_URL,
@@ -2926,6 +2927,130 @@ async def get_goal_history(goal_id: str, user: dict = Depends(get_current_user))
     
     return history
 
+
+@api_router.get("/goals/weekly-progress")
+async def get_weekly_progress(
+    user_id: Optional[str] = Query(default=None),
+    current_user: dict = Depends(get_current_user),
+):
+    target_user_id = current_user["id"]
+    if user_id and user_id != current_user["id"]:
+        if current_user.get("role") != "ADMIN":
+            raise HTTPException(status_code=403, detail="Acesso negado.")
+        target_user_id = user_id
+
+    target_user = await db.users.find_one({"id": target_user_id}, {"_id": 0})
+    if not target_user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+
+    goals = await db.goals.find(
+        {"user_id": target_user_id, "is_deleted": {"$ne": True}},
+        {"_id": 0, "id": 1, "title": 1, "pillar": 1},
+    ).to_list(length=None)
+
+    nps_records = await db.nps_records.find(
+        {"user_id": target_user_id, "status": "completed"}
+    ).sort("send_date", -1).to_list(length=3)
+
+    scores_by_goal: Dict[str, List[Dict[str, Any]]] = {}
+    for record in reversed(nps_records):
+        reference_date = record.get("fill_date") or record.get("send_date")
+        month_label = ""
+        if isinstance(reference_date, datetime):
+            month_label = reference_date.strftime("%b/%Y")
+        for evaluation in record.get("evaluations", []):
+            goal_id = evaluation.get("goal_id")
+            score = evaluation.get("score")
+            if not goal_id or not isinstance(score, (int, float)):
+                continue
+            scores_by_goal.setdefault(goal_id, []).append(
+                {"month": month_label or "Ciclo", "score": round(float(score), 2)}
+            )
+
+    progress_items = []
+    for goal in goals:
+        goal_id = goal.get("id")
+        points = scores_by_goal.get(goal_id, [])[-3:]
+        values = [point["score"] for point in points]
+        average = round(sum(values) / len(values), 2) if values else None
+        progress_items.append(
+            {
+                "goal_id": goal_id,
+                "goal_title": goal.get("title", "Meta sem título"),
+                "pillar": goal.get("pillar", ""),
+                "average": average,
+                "series": points,
+            }
+        )
+
+    return {
+        "user_id": target_user_id,
+        "full_name": target_user.get("full_name", ""),
+        "goals": progress_items,
+    }
+
+
+@api_router.get("/admin/weekly-progress-monitor")
+async def get_admin_weekly_progress_monitor(admin: dict = Depends(get_admin_user)):
+    _ = admin
+    users = await db.users.find({"is_active": True, "role": {"$in": ["DEFAULT", "USER"]}}).to_list(length=None)
+    now = datetime.now(timezone.utc)
+    monday_anchor = now - timedelta(days=now.weekday())
+    mondays = [(monday_anchor - timedelta(days=7 * idx)).date() for idx in range(4)]
+    week_labels = [f"Semana {idx}" for idx in range(1, 5)]
+
+    rows = []
+    for user in users:
+        user_id = user.get("id")
+        if not user_id:
+            continue
+        logs = await db.goal_reminders_log.find({"user_id": user_id}).sort("timestamp", -1).to_list(length=50)
+        week_data = []
+        for monday_date in mondays:
+            status_for_week = "not_sent"
+            for log in logs:
+                ts = log.get("timestamp")
+                if not isinstance(ts, datetime):
+                    continue
+                if ts.date() >= monday_date and ts.date() <= (monday_date + timedelta(days=6)):
+                    if log.get("status") == "failed":
+                        status_for_week = "failed"
+                    elif log.get("link_sent") is True:
+                        status_for_week = "success"
+                    else:
+                        status_for_week = "not_sent"
+                    break
+            week_data.append({"week_start": monday_date.isoformat(), "status": status_for_week})
+
+        rows.append(
+            {
+                "user_id": user_id,
+                "full_name": user.get("full_name", "Sem nome"),
+                "weeks": week_data,
+            }
+        )
+
+    return {"columns": week_labels, "rows": rows}
+
+
+@api_router.get("/admin/weekly-progress-cycle/{user_id}")
+async def get_admin_weekly_progress_cycle(user_id: str, admin: dict = Depends(get_admin_user)):
+    _ = admin
+    logs = await db.goal_reminders_log.find({"user_id": user_id}).sort("timestamp", 1).to_list(length=500)
+    cycle_data = []
+    for log in logs:
+        snapshot = log.get("snapshot_data") or {}
+        cycle_data.append(
+            {
+                "timestamp": log.get("timestamp"),
+                "status": log.get("status"),
+                "link_sent": bool(log.get("link_sent")),
+                "medias_calculadas": snapshot.get("medias_calculadas", {}),
+                "meta_naves": snapshot.get("meta_naves", []),
+            }
+        )
+    return {"user_id": user_id, "history": cycle_data}
+
 # ---- AI ROUTES ----
 
 @api_router.post("/ai/analyze")
@@ -3345,6 +3470,17 @@ async def startup_scheduler():
         minute=0,
         args=[db],
         id="nps_reminders_daily_cron",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        process_weekly_goal_reminders,
+        "cron",
+        day_of_week="mon",
+        hour=8,
+        minute=0,
+        timezone="America/Sao_Paulo",
+        args=[db],
+        id="goals_weekly_cron",
         replace_existing=True,
     )
     if not scheduler.running:
