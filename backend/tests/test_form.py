@@ -9,7 +9,7 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 from server import FormSubmission
 
 
-def test_form_submission_truncates_long_detected_goal_titles():
+def test_form_submission_truncates_detected_goal_titles_to_80_chars():
     long_title = "Quero finalmente organizar toda minha rotina diária com muitos detalhes extras desnecessários"
 
     submission = FormSubmission.as_form(
@@ -32,5 +32,5 @@ def test_form_submission_truncates_long_detected_goal_titles():
     )
 
     assert len(submission.detected_goals) == 1
-    assert submission.detected_goals[0].title == "Quero finalmente organizar toda minha rotina diária com muitos detalhes"
-    assert len(submission.detected_goals[0].title.split()) <= 10
+    assert submission.detected_goals[0].title == long_title[:80]
+    assert len(submission.detected_goals[0].title) <= 80

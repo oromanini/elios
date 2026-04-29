@@ -8,8 +8,9 @@ from pathlib import Path
 from io import BytesIO
 import base64
 import json
-from pydantic import BaseModel, Field, ConfigDict, EmailStr, field_validator
+from pydantic import BaseModel, Field, ConfigDict, EmailStr, field_validator, model_validator
 from typing import List, Optional, Dict, Any
+from enum import Enum
 import uuid
 from datetime import datetime, timezone, timedelta, date
 import jwt
@@ -278,6 +279,23 @@ class FormResponseCreate(BaseModel):
     question_id: str
     answer: str
 
+META_MAGNUS_QUESTION_ID = "ca7e651a-a3a7-41f0-b38f-81f5bcc0b699"
+
+class PillarEnum(str, Enum):
+    ESPIRITUALIDADE = "ESPIRITUALIDADE"
+    CUIDADOS_COM_A_SAUDE = "CUIDADOS COM A SAÚDE"
+    EQUILIBRIO_EMOCIONAL = "EQUILÍBRIO EMOCIONAL"
+    LAZER = "LAZER"
+    GESTAO_DO_TEMPO_E_ORGANIZACAO = "GESTÃO DO TEMPO E ORGANIZAÇÃO"
+    DESENVOLVIMENTO_INTELECTUAL = "DESENVOLVIMENTO INTELECTUAL"
+    IMAGEM_PESSOAL = "IMAGEM PESSOAL"
+    FAMILIA = "FAMÍLIA"
+    CRESCIMENTO_PROFISSIONAL = "CRESCIMENTO PROFISSIONAL"
+    FINANCAS = "FINANÇAS"
+    NETWORKING_E_CONTRIBUICAO = "NETWORKING E CONTRIBUIÇÃO"
+    META_MAGNUS = "META MAGNUS"
+
+
 def _normalize_goal_title(title: str, max_words: int = 10) -> str:
     cleaned = re.sub(r"\s+", " ", (title or "").strip())
     if not cleaned:
@@ -287,14 +305,14 @@ def _normalize_goal_title(title: str, max_words: int = 10) -> str:
 
 class FormDetectedGoal(BaseModel):
     question_id: str
-    pillar: str
+    pillar: PillarEnum | str
     title: str
-    description: str
+    description: Optional[str] = None
 
     @field_validator("title")
     @classmethod
     def validate_title(cls, value: str) -> str:
-        normalized = _normalize_goal_title(value)
+        normalized = re.sub(r"\s+", " ", (value or "").strip())[:80]
         if not normalized:
             raise ValueError("title vazio")
         return normalized
@@ -307,6 +325,36 @@ class FormSubmission(BaseModel):
     profile_photo: Optional[UploadFile] = None
     responses: List[FormResponseCreate]
     detected_goals: List[FormDetectedGoal] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_detected_goals_mapping(self) -> "FormSubmission":
+        response_by_question = {resp.question_id: (resp.answer or "").strip() for resp in self.responses if resp.question_id}
+        goals_by_question = {goal.question_id: goal for goal in self.detected_goals if goal.question_id}
+
+        if META_MAGNUS_QUESTION_ID in response_by_question and META_MAGNUS_QUESTION_ID not in goals_by_question:
+            self.detected_goals.append(
+                FormDetectedGoal(
+                    question_id=META_MAGNUS_QUESTION_ID,
+                    pillar=PillarEnum.META_MAGNUS.value,
+                    title=response_by_question[META_MAGNUS_QUESTION_ID][:80] or "Meta Magnus",
+                    description=response_by_question[META_MAGNUS_QUESTION_ID] or None,
+                )
+            )
+
+        # Compatibilidade flexível: permite 11 pilares essenciais mesmo com respostas extras.
+        goals_count = len(self.detected_goals)
+        responses_count = len(self.responses)
+        if goals_count > responses_count:
+            raise ValueError("detected_goals possui mais itens que responses")
+
+        essential_pillars_present = {
+            (goal.pillar.value if isinstance(goal.pillar, PillarEnum) else str(goal.pillar)).strip().upper()
+            for goal in self.detected_goals
+            if goal.pillar
+        }
+        if goals_count < responses_count and len(essential_pillars_present.intersection(set(PILLARS_WITH_META_MAGNUS[:-1]))) < 11:
+            raise ValueError("detected_goals incompatível com respostas/pilares essenciais")
+        return self
 
     @classmethod
     def as_form(
@@ -339,12 +387,38 @@ class FormSubmission(BaseModel):
             try:
                 parsed_detected_goals = [FormDetectedGoal.model_validate(item) for item in goals_payload]
             except Exception as exc:
-                logger.warning(
-                    "Detected goals payload rejected on /form/submit parse. payload=%s error=%s",
-                    goals_payload,
-                    str(exc)
+                logger.error(
+                    "Erro de validação em detected_goals no parse. field=detected_goals question_id=%s responses_count=%d detected_goals_count=%d error=%s",
+                    (goals_payload[0] or {}).get("question_id") if isinstance(goals_payload, list) and goals_payload else None,
+                    len(response_items),
+                    len(goals_payload) if isinstance(goals_payload, list) else 0,
+                    str(exc),
                 )
                 raise HTTPException(status_code=422, detail="Formato de metas detectadas inválido.") from exc
+
+        response_map = {item.question_id: (item.answer or "").strip() for item in response_items if item.question_id}
+        goal_map = {goal.question_id: goal for goal in parsed_detected_goals if goal.question_id}
+        missing_goal_ids = [qid for qid in response_map if qid not in goal_map]
+
+        if META_MAGNUS_QUESTION_ID in missing_goal_ids:
+            response_text = response_map.get(META_MAGNUS_QUESTION_ID, "")
+            parsed_detected_goals.append(
+                FormDetectedGoal(
+                    question_id=META_MAGNUS_QUESTION_ID,
+                    pillar=PillarEnum.META_MAGNUS.value,
+                    title=(response_text.strip() or "Meta Magnus")[:80],
+                    description=response_text or None,
+                )
+            )
+            missing_goal_ids = [qid for qid in missing_goal_ids if qid != META_MAGNUS_QUESTION_ID]
+
+        if missing_goal_ids:
+            logger.error(
+                "Inconsistência entre responses e detected_goals. field=question_id question_id=%s responses_count=%d detected_goals_count=%d",
+                missing_goal_ids[0],
+                len(response_items),
+                len(parsed_detected_goals),
+            )
 
         return cls(
             full_name=full_name,
@@ -446,14 +520,14 @@ class AnalyzeResponseRequest(BaseModel):
     answer: str
 
 class DetectedGoal(BaseModel):
-    pillar: str
+    pillar: PillarEnum | str
     title: str
     description: Optional[str] = None
 
     @field_validator("title")
     @classmethod
     def validate_title(cls, value: str) -> str:
-        normalized = _normalize_goal_title(value)
+        normalized = re.sub(r"\s+", " ", (value or "").strip())[:80]
         if not normalized:
             raise ValueError("title vazio")
         return normalized
@@ -537,6 +611,23 @@ PILLARS_WITH_META_MAGNUS = [
     "NETWORKING E CONTRIBUIÇÃO",
     "META MAGNUS",
 ]
+
+META_MAGNUS_QUESTION_ID = "ca7e651a-a3a7-41f0-b38f-81f5bcc0b699"
+
+
+class PillarEnum(str, Enum):
+    ESPIRITUALIDADE = "ESPIRITUALIDADE"
+    CUIDADOS_COM_A_SAUDE = "CUIDADOS COM A SAÚDE"
+    EQUILIBRIO_EMOCIONAL = "EQUILÍBRIO EMOCIONAL"
+    LAZER = "LAZER"
+    GESTAO_DO_TEMPO_E_ORGANIZACAO = "GESTÃO DO TEMPO E ORGANIZAÇÃO"
+    DESENVOLVIMENTO_INTELECTUAL = "DESENVOLVIMENTO INTELECTUAL"
+    IMAGEM_PESSOAL = "IMAGEM PESSOAL"
+    FAMILIA = "FAMÍLIA"
+    CRESCIMENTO_PROFISSIONAL = "CRESCIMENTO PROFISSIONAL"
+    FINANCAS = "FINANÇAS"
+    NETWORKING_E_CONTRIBUICAO = "NETWORKING E CONTRIBUIÇÃO"
+    META_MAGNUS = "META MAGNUS"
 
 # ==================== HELPER FUNCTIONS ====================
 
