@@ -90,7 +90,7 @@ export const formAPI = {
       'Content-Type': 'multipart/form-data'
     }
   }),
-  getResponses: () => api.get('/form/responses'),
+  getResponses: (userId) => api.get('/form/responses', { params: userId ? { user_id: userId } : {} }),
   updateResponse: (id, data) => api.put(`/form/responses/${id}`, data)
 };
 
@@ -138,7 +138,7 @@ export const adminAPI = {
 
 // Dashboard API
 export const dashboardAPI = {
-  getStats: () => api.get('/dashboard/stats')
+  getStats: (userId) => api.get('/dashboard/stats', { params: userId ? { user_id: userId } : {} })
 };
 
 // Init API (run once)
