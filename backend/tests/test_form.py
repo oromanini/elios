@@ -9,7 +9,7 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 from server import FormSubmission
 
 
-def test_form_submission_truncates_detected_goal_titles_to_80_chars():
+def test_form_submission_truncates_detected_goal_titles_to_60_chars():
     long_title = "Quero finalmente organizar toda minha rotina diária com muitos detalhes extras desnecessários"
 
     submission = FormSubmission.as_form(
@@ -18,7 +18,7 @@ def test_form_submission_truncates_detected_goal_titles_to_80_chars():
         whatsapp="+5511999999999",
         date_of_birth=None,
         responses=json.dumps([
-            {"question_id": "q1", "answer": "Vou treinar 4x por semana"}
+            {"question_id": "q1", "answer": "Vou treinar 4x por semana", "rating": 8}
         ]),
         detected_goals=json.dumps([
             {
@@ -32,5 +32,5 @@ def test_form_submission_truncates_detected_goal_titles_to_80_chars():
     )
 
     assert len(submission.detected_goals) == 1
-    assert submission.detected_goals[0].title == long_title[:80]
-    assert len(submission.detected_goals[0].title) <= 80
+    assert submission.detected_goals[0].title == long_title[:60]
+    assert len(submission.detected_goals[0].title) <= 60
