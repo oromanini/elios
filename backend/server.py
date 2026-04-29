@@ -278,6 +278,13 @@ class QuestionUpdate(BaseModel):
 class FormResponseCreate(BaseModel):
     question_id: str
     answer: str
+    rating: Optional[int] = Field(default=None, ge=0, le=10)
+
+    @model_validator(mode="after")
+    def validate_rating_requirement(self) -> "FormResponseCreate":
+        if self.question_id != META_MAGNUS_QUESTION_ID and self.rating is None:
+            raise ValueError("rating é obrigatório para todos os pilares, exceto Meta Magnus")
+        return self
 
 META_MAGNUS_QUESTION_ID = "ca7e651a-a3a7-41f0-b38f-81f5bcc0b699"
 
@@ -312,7 +319,7 @@ class FormDetectedGoal(BaseModel):
     @field_validator("title")
     @classmethod
     def validate_title(cls, value: str) -> str:
-        normalized = re.sub(r"\s+", " ", (value or "").strip())[:80]
+        normalized = re.sub(r"\s+", " ", (value or "").strip())[:60]
         if not normalized:
             raise ValueError("title vazio")
         return normalized
@@ -329,31 +336,30 @@ class FormSubmission(BaseModel):
     @model_validator(mode="after")
     def validate_detected_goals_mapping(self) -> "FormSubmission":
         response_by_question = {resp.question_id: (resp.answer or "").strip() for resp in self.responses if resp.question_id}
-        goals_by_question = {goal.question_id: goal for goal in self.detected_goals if goal.question_id}
+        normalized_goals_by_question: Dict[str, FormDetectedGoal] = {}
 
-        if META_MAGNUS_QUESTION_ID in response_by_question and META_MAGNUS_QUESTION_ID not in goals_by_question:
-            self.detected_goals.append(
-                FormDetectedGoal(
-                    question_id=META_MAGNUS_QUESTION_ID,
-                    pillar=PillarEnum.META_MAGNUS.value,
-                    title=response_by_question[META_MAGNUS_QUESTION_ID][:80] or "Meta Magnus",
-                    description=response_by_question[META_MAGNUS_QUESTION_ID] or None,
-                )
+        for goal in self.detected_goals:
+            if not goal.question_id:
+                continue
+            response_text = response_by_question.get(goal.question_id, "")
+            normalized_title = _normalize_goal_title(goal.title, max_words=10)[:60] or _normalize_goal_title(response_text, max_words=10)[:60] or "Meta"
+            normalized_goals_by_question[goal.question_id] = FormDetectedGoal(
+                question_id=goal.question_id,
+                pillar=PillarEnum.META_MAGNUS.value if goal.question_id == META_MAGNUS_QUESTION_ID else goal.pillar,
+                title=normalized_title,
+                description=goal.description or (response_text or None),
             )
 
-        # Compatibilidade flexível: permite 11 pilares essenciais mesmo com respostas extras.
-        goals_count = len(self.detected_goals)
-        responses_count = len(self.responses)
-        if goals_count > responses_count:
-            raise ValueError("detected_goals possui mais itens que responses")
+        if META_MAGNUS_QUESTION_ID in response_by_question:
+            response_text = response_by_question[META_MAGNUS_QUESTION_ID]
+            normalized_goals_by_question[META_MAGNUS_QUESTION_ID] = FormDetectedGoal(
+                question_id=META_MAGNUS_QUESTION_ID,
+                pillar=PillarEnum.META_MAGNUS.value,
+                title=_normalize_goal_title(response_text, max_words=10)[:60] or "Meta Magnus",
+                description=response_text or None,
+            )
 
-        essential_pillars_present = {
-            (goal.pillar.value if isinstance(goal.pillar, PillarEnum) else str(goal.pillar)).strip().upper()
-            for goal in self.detected_goals
-            if goal.pillar
-        }
-        if goals_count < responses_count and len(essential_pillars_present.intersection(set(PILLARS_WITH_META_MAGNUS[:-1]))) < 11:
-            raise ValueError("detected_goals incompatível com respostas/pilares essenciais")
+        self.detected_goals = list(normalized_goals_by_question.values())
         return self
 
     @classmethod
@@ -387,39 +393,35 @@ class FormSubmission(BaseModel):
             try:
                 parsed_detected_goals = [FormDetectedGoal.model_validate(item) for item in goals_payload]
             except Exception as exc:
-                logger.error(
-                    "Erro de validação em detected_goals no parse. field=detected_goals question_id=%s responses_count=%d detected_goals_count=%d error=%s",
-                    (goals_payload[0] or {}).get("question_id") if isinstance(goals_payload, list) and goals_payload else None,
-                    len(response_items),
-                    len(goals_payload) if isinstance(goals_payload, list) else 0,
-                    str(exc),
-                )
+                logger.error("Erro de validação em detected_goals no parse. payload=%s error=%s", {"responses": parsed_responses, "detected_goals": goals_payload}, str(exc))
                 raise HTTPException(status_code=422, detail="Formato de metas detectadas inválido.") from exc
 
         response_map = {item.question_id: (item.answer or "").strip() for item in response_items if item.question_id}
         goal_map = {goal.question_id: goal for goal in parsed_detected_goals if goal.question_id}
-        missing_goal_ids = [qid for qid in response_map if qid not in goal_map]
 
-        if META_MAGNUS_QUESTION_ID in missing_goal_ids:
-            response_text = response_map.get(META_MAGNUS_QUESTION_ID, "")
-            parsed_detected_goals.append(
-                FormDetectedGoal(
-                    question_id=META_MAGNUS_QUESTION_ID,
-                    pillar=PillarEnum.META_MAGNUS.value,
-                    title=(response_text.strip() or "Meta Magnus")[:80],
-                    description=response_text or None,
+        reconciled_goals: List[FormDetectedGoal] = []
+        for qid, response_text in response_map.items():
+            existing_goal = goal_map.get(qid)
+            if existing_goal:
+                reconciled_goals.append(
+                    FormDetectedGoal(
+                        question_id=qid,
+                        pillar=PillarEnum.META_MAGNUS.value if qid == META_MAGNUS_QUESTION_ID else existing_goal.pillar,
+                        title=_normalize_goal_title(existing_goal.title, max_words=10)[:60] or _normalize_goal_title(response_text, max_words=10)[:60] or "Meta",
+                        description=existing_goal.description or response_text or None,
+                    )
                 )
-            )
-            missing_goal_ids = [qid for qid in missing_goal_ids if qid != META_MAGNUS_QUESTION_ID]
+            elif qid == META_MAGNUS_QUESTION_ID:
+                reconciled_goals.append(
+                    FormDetectedGoal(
+                        question_id=META_MAGNUS_QUESTION_ID,
+                        pillar=PillarEnum.META_MAGNUS.value,
+                        title=_normalize_goal_title(response_text, max_words=10)[:60] or "Meta Magnus",
+                        description=response_text or None,
+                    )
+                )
 
-        if missing_goal_ids:
-            logger.error(
-                "Inconsistência entre responses e detected_goals. field=question_id question_id=%s responses_count=%d detected_goals_count=%d",
-                missing_goal_ids[0],
-                len(response_items),
-                len(parsed_detected_goals),
-            )
-
+        parsed_detected_goals = reconciled_goals
         return cls(
             full_name=full_name,
             email=email,
@@ -527,7 +529,7 @@ class DetectedGoal(BaseModel):
     @field_validator("title")
     @classmethod
     def validate_title(cls, value: str) -> str:
-        normalized = re.sub(r"\s+", " ", (value or "").strip())[:80]
+        normalized = re.sub(r"\s+", " ", (value or "").strip())[:60]
         if not normalized:
             raise ValueError("title vazio")
         return normalized
@@ -1379,16 +1381,17 @@ Retorne SOMENTE JSON válido com este formato:
   "objectives": ["meta objetiva 1", "meta objetiva 2"],
   "is_satisfactory": true|false,
   "detected_goals": [
-    {"title": "meta completa e acionável"}
+    {"question_id": "uuid", "pillar": "NOME DO PILAR", "title": "verbo + frequência", "rating": 0}
   ]
 }
 
 REGRAS DE ANÁLISE:
-1. SUBJETIVIDADE OBRIGATÓRIA: CITE o contexto específico da resposta do usuário no seu feedback. Prove que você leu. (Ex: se ele falou de "farmácia", mencione "o negócio").
-2. RIGOR: Se a resposta for genérica ("vou melhorar") sem especificar O QUE e QUANDO, retorne is_satisfactory=false.
-3. DETECTED_GOALS e OBJECTIVES: Só preencha se houver um verbo de ação claro + uma medida de tempo/quantidade. NUNCA copie o texto do usuário na íntegra.
-4. Em DETECTED_GOALS, retorne APENAS `title` curto (máximo de 10 palavras) no formato [Verbo de Ação] + [Frequência/Métrica]. Não retorne `description`.
-5. FEEDBACK: Máximo de 3 linhas. Se is_satisfactory=false, dê um puxão de orelha apontando a falta de especificidade."""
+1. Se a resposta for vaga (ex.: "Quero melhorar"), retorne is_satisfactory=false e feedback pedindo objetivo claro com verbo e frequência.
+2. Respostas ideais: extraia metas diretas no formato verbo + frequência.
+3. Respostas longas com muitas metas: filtre e retorne somente as 3 metas mais importantes.
+4. Em detected_goals, inclua question_id e pillar recebidos no contexto, e rating de 0 a 10 quando aplicável.
+5. Nunca copie a resposta inteira; title curto com até 60 caracteres.
+6. FEEDBACK máximo de 3 linhas."""
 
     user_message = f"Pilar: {pillar}\nPergunta: {question}\nResposta do usuário: {answer}"
 
@@ -1415,11 +1418,11 @@ REGRAS DE ANÁLISE:
 
         detected_goals = []
         for goal in goals_payload:
-            title = str(goal.get("title", "")).strip()
+            title = str(goal.get("title", "")).strip()[:60]
             if title:
                 detected_goals.append(
                     DetectedGoal(
-                        pillar=pillar,
+                        pillar=str(goal.get("pillar") or pillar),
                         title=title
                     )
                 )
@@ -2821,10 +2824,23 @@ async def submit_form(submission: FormSubmission = Depends(FormSubmission.as_for
             "user_id": user_id,
             "question_id": response.question_id,
             "answer": response.answer,
+            "rating": response.rating,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "version": 1
         }
         await db.form_responses.insert_one(response_doc)
+        if response.rating is not None:
+            await db.pillar_states.update_one(
+                {"user_id": user_id, "question_id": response.question_id},
+                {"$setOnInsert": {
+                    "id": str(uuid.uuid4()),
+                    "user_id": user_id,
+                    "question_id": response.question_id,
+                    "initial_rating": response.rating,
+                    "created_at": datetime.now(timezone.utc).isoformat()
+                }},
+                upsert=True
+            )
 
     # Save detected goals extracted by ELIOS during "Próximo"
     normalized_keys = set()
