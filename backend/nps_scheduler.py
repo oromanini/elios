@@ -7,7 +7,7 @@ from typing import Any, Dict, List
 from whatsapp_utils import format_phone_for_whatsapp, send_whatsapp_text
 
 EVOLUTION_API_KEY = os.environ.get("EVOLUTION_API_KEY", "")
-FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://elios.hutooeducacao.com").rstrip("/")
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +21,7 @@ async def send_whatsapp_nps_link(phone: str, nps_id: str, cycle: int):
         logger.warning("Envio de WhatsApp abortado: telefone inválido (%s).", phone)
         return
 
-    base_url = FRONTEND_URL
-    link = f"{base_url}/nps/{nps_id}"
+    link = f"{FRONTEND_URL}/nps/{nps_id}"
     first_text = (
         f"Olá! Está na hora do seu Check-in de Performance Mensal do ELIOS (Ciclo {cycle} de 12). "
         "Clique no link para avaliar as suas metas:"
