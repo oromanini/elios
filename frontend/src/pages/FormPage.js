@@ -181,6 +181,7 @@ const FormPage = () => {
   const [whatsapp, setWhatsapp] = useState('');
   const [birthDate, setBirthDate] = useState('');
   const [responses, setResponses] = useState({});
+  const [ratings, setRatings] = useState({});
 
   useEffect(() => {
     loadQuestions();
@@ -234,8 +235,13 @@ const FormPage = () => {
     if (currentStep >= 5) {
       const question = questions[currentStep - 5];
       const answer = responses[question.id]?.trim() || '';
+      const rating = ratings[question.id];
       if (answer.length < MIN_QUESTION_ANSWER_LENGTH) {
         toast.error(`Por favor, escreva pelo menos ${MIN_QUESTION_ANSWER_LENGTH} caracteres para continuar`);
+        return;
+      }
+      if (question.id !== 'ca7e651a-a3a7-41f0-b38f-81f5bcc0b699' && (rating === undefined || rating === null)) {
+        toast.error('Por favor, selecione uma nota de 0 a 10 para este pilar antes de continuar.');
         return;
       }
 
@@ -300,7 +306,8 @@ const FormPage = () => {
     try {
       const formattedResponses = Object.entries(responses).map(([questionId, answer]) => ({
         question_id: questionId,
-        answer: answer
+        answer: answer,
+        rating: ratings[questionId] ?? null
       }));
 
       const formData = new FormData();
@@ -351,6 +358,13 @@ const FormPage = () => {
     }
 
     setProfilePhoto(file);
+  };
+
+  const handleRatingChange = (questionId, value) => {
+    setRatings((prev) => ({
+      ...prev,
+      [questionId]: Number(value)
+    }));
   };
 
   if (loading) {
@@ -599,6 +613,33 @@ const FormPage = () => {
         
         <div className="space-y-4">
           <p className="text-slate-300 text-center">{question.description}</p>
+
+          {question.id !== 'ca7e651a-a3a7-41f0-b38f-81f5bcc0b699' && (
+            <div className="space-y-3 rounded-xl border border-slate-700 bg-slate-900/40 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <Label className="text-slate-200 text-sm">
+                  NPS deste pilar (0 = muito ruim, 10 = excelente)
+                </Label>
+                <span className="text-primary font-bold text-lg">
+                  {ratings[question.id] ?? '-'}
+                </span>
+              </div>
+              <Input
+                type="range"
+                min="0"
+                max="10"
+                step="1"
+                value={ratings[question.id] ?? 5}
+                onChange={(e) => handleRatingChange(question.id, e.target.value)}
+                className="h-2 cursor-pointer accent-primary"
+                data-testid={`form-rating-${questionIndex}`}
+              />
+              <div className="flex justify-between text-xs text-slate-400">
+                <span>0</span>
+                <span>10</span>
+              </div>
+            </div>
+          )}
           
           <Textarea
             placeholder="Descreva detalhadamente sua situação atual e seus objetivos para os próximos 12 meses..."
