@@ -2875,10 +2875,19 @@ async def submit_form(submission: FormSubmission = Depends(FormSubmission.as_for
     }
 
 @api_router.get("/form/responses")
-async def get_my_responses(user: dict = Depends(get_current_user)):
+async def get_my_responses(
+    user_id: Optional[str] = Query(default=None),
+    user: dict = Depends(get_current_user),
+):
     """Get current user's form responses"""
+    target_user_id = user["id"]
+    if user_id and user_id != user["id"]:
+        if user.get("role") != "ADMIN":
+            raise HTTPException(status_code=403, detail="Acesso negado.")
+        target_user_id = user_id
+
     responses = await db.form_responses.find(
-        {"user_id": user["id"]},
+        {"user_id": target_user_id},
         {"_id": 0}
     ).to_list(100)
     
@@ -3298,19 +3307,27 @@ async def trigger_whatsapp_contacts_sync(
 # ---- DASHBOARD ROUTES ----
 
 @api_router.get("/dashboard/stats")
-async def get_dashboard_stats(user: dict = Depends(get_current_user)):
+async def get_dashboard_stats(
+    user_id: Optional[str] = Query(default=None),
+    user: dict = Depends(get_current_user),
+):
     """Get dashboard statistics for the user"""
+    target_user_id = user["id"]
+    if user_id and user_id != user["id"]:
+        if user.get("role") != "ADMIN":
+            raise HTTPException(status_code=403, detail="Acesso negado.")
+        target_user_id = user_id
     
     # Get goals count by pillar
     pipeline = [
-        {"$match": {"user_id": user["id"], "is_deleted": False}},
+        {"$match": {"user_id": target_user_id, "is_deleted": False}},
         {"$group": {"_id": "$pillar", "count": {"$sum": 1}, "completed": {"$sum": {"$cond": [{"$eq": ["$status", "completed"]}, 1, 0]}}}}
     ]
     goals_by_pillar = await db.goals.aggregate(pipeline).to_list(20)
     
     # Get form responses for radar chart
     responses = await db.form_responses.find(
-        {"user_id": user["id"]},
+        {"user_id": target_user_id},
         {"_id": 0}
     ).to_list(100)
     

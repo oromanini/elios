@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
 from whatsapp_utils import format_phone_for_whatsapp, send_whatsapp_text
@@ -79,6 +79,7 @@ async def _insert_goal_log(
 
 
 async def process_weekly_goal_reminders(db: Any):
+    now = datetime.now(timezone.utc)
     users = await db.users.find({"is_active": True}).to_list(length=None)
 
     for user in users:
@@ -114,6 +115,21 @@ async def process_weekly_goal_reminders(db: Any):
         link_sent = False
 
         if must_send:
+            duplicate_logs = await db.goal_reminders_log.find(
+                {
+                    "user_id": user_id,
+                    "link_sent": True,
+                }
+            ).to_list(length=10)
+            has_recent_duplicate = any(
+                isinstance(log.get("timestamp"), datetime)
+                and ((log.get("timestamp").replace(tzinfo=timezone.utc) if log.get("timestamp").tzinfo is None else log.get("timestamp")) >= now - timedelta(minutes=5))
+                for log in duplicate_logs
+            )
+            if has_recent_duplicate:
+                logger.info("Lembrete semanal já enviado recentemente para %s. Ignorando duplicidade.", user_id)
+                continue
+
             phone = user.get("whatsapp") or user.get("phone")
             clean_phone = format_phone_for_whatsapp(phone or "")
             if len(clean_phone) < 12:

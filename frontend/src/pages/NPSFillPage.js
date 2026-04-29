@@ -6,6 +6,7 @@ import { Button } from '../components/ui/button';
 import { Skeleton } from '../components/ui/skeleton';
 import { Badge } from '../components/ui/badge';
 import api from '../services/api';
+import { toast } from 'sonner';
 
 const SCORE_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
@@ -88,7 +89,7 @@ const NPSFillPage = () => {
       setSubmitted(true);
     } catch (err) {
       const fallbackMessage = 'Não foi possível enviar sua avaliação agora. Tente novamente em alguns instantes.';
-      setError(err?.response?.data?.detail || fallbackMessage);
+      toast.error(err?.response?.data?.detail || fallbackMessage);
     } finally {
       setSubmitting(false);
     }

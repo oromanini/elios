@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { dashboardAPI, formAPI } from '../services/api';
+import { adminAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'sonner';
 import {
@@ -22,6 +23,7 @@ import {
   ArrowRight
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { useNavigate } from 'react-router-dom';
 
 const DashboardPage = () => {
@@ -29,6 +31,8 @@ const DashboardPage = () => {
   const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   const [responses, setResponses] = useState([]);
+  const [mentorados, setMentorados] = useState([]);
+  const [selectedMentoradoId, setSelectedMentoradoId] = useState('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -37,9 +41,12 @@ const DashboardPage = () => {
 
   const loadData = async () => {
     try {
-      const [statsResult, responsesResult] = await Promise.allSettled([
-        dashboardAPI.getStats(),
-        formAPI.getResponses()
+      const isAdmin = user?.role === 'ADMIN';
+      const targetUserId = selectedMentoradoId || undefined;
+      const [statsResult, responsesResult, mentoradosResult] = await Promise.allSettled([
+        dashboardAPI.getStats(targetUserId),
+        formAPI.getResponses(targetUserId),
+        isAdmin ? adminAPI.getUsers() : Promise.resolve({ data: [] })
       ]);
 
       if (statsResult.status === 'fulfilled') {
@@ -53,6 +60,14 @@ const DashboardPage = () => {
       } else {
         setResponses([]);
       }
+
+      if (mentoradosResult.status === 'fulfilled' && isAdmin) {
+        const users = (mentoradosResult.value.data || []).filter((item) => item?.role !== 'ADMIN');
+        setMentorados(users);
+        if (!selectedMentoradoId && users.length > 0) {
+          setSelectedMentoradoId(users[0].id);
+        }
+      }
     } catch (error) {
       console.error('Error loading dashboard:', error);
       toast.error('Erro ao carregar dashboard');
@@ -60,6 +75,12 @@ const DashboardPage = () => {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (user?.role === 'ADMIN' && selectedMentoradoId) {
+      loadData();
+    }
+  }, [selectedMentoradoId]);
 
   if (loading) {
     return (
@@ -72,6 +93,7 @@ const DashboardPage = () => {
   }
 
   const radarData = stats?.radar_data || [];
+  const isAdmin = user?.role === 'ADMIN';
 
   return (
     <Layout>
@@ -95,6 +117,25 @@ const DashboardPage = () => {
             Conversar com ELIOS
           </Button>
         </div>
+        {isAdmin && (
+          <Card className="glass-card border-white/10">
+            <CardContent className="p-4">
+              <p className="text-slate-300 text-sm mb-2">Selecionar mentorado</p>
+              <Select value={selectedMentoradoId} onValueChange={setSelectedMentoradoId}>
+                <SelectTrigger className="bg-neutral-900/60 border-white/10 text-white">
+                  <SelectValue placeholder="Escolha um mentorado" />
+                </SelectTrigger>
+                <SelectContent>
+                  {mentorados.map((mentorado) => (
+                    <SelectItem key={mentorado.id} value={mentorado.id}>
+                      {mentorado.full_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

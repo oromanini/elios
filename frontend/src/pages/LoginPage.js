@@ -134,7 +134,7 @@ const LoginPage = () => {
                 data-testid="register-link"
               >
                 <UserPlus className="mr-2" size={18} />
-                Preencher Formulário de Cadastro
+                Iniciar cadastro
               </Button>
             </div>
           </CardContent>
