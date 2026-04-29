@@ -8,7 +8,7 @@ from pathlib import Path
 from io import BytesIO
 import base64
 import json
-from pydantic import BaseModel, Field, ConfigDict, EmailStr
+from pydantic import BaseModel, Field, ConfigDict, EmailStr, field_validator
 from typing import List, Optional, Dict, Any
 import uuid
 from datetime import datetime, timezone, timedelta, date
@@ -278,11 +278,26 @@ class FormResponseCreate(BaseModel):
     question_id: str
     answer: str
 
+def _normalize_goal_title(title: str, max_words: int = 10) -> str:
+    cleaned = re.sub(r"\s+", " ", (title or "").strip())
+    if not cleaned:
+        return ""
+    words = cleaned.split(" ")
+    return " ".join(words[:max_words])
+
 class FormDetectedGoal(BaseModel):
     question_id: str
     pillar: str
     title: str
     description: str
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, value: str) -> str:
+        normalized = _normalize_goal_title(value)
+        if not normalized:
+            raise ValueError("title vazio")
+        return normalized
 
 class FormSubmission(BaseModel):
     full_name: str
@@ -324,6 +339,11 @@ class FormSubmission(BaseModel):
             try:
                 parsed_detected_goals = [FormDetectedGoal.model_validate(item) for item in goals_payload]
             except Exception as exc:
+                logger.warning(
+                    "Detected goals payload rejected on /form/submit parse. payload=%s error=%s",
+                    goals_payload,
+                    str(exc)
+                )
                 raise HTTPException(status_code=422, detail="Formato de metas detectadas inválido.") from exc
 
         return cls(
@@ -429,6 +449,14 @@ class DetectedGoal(BaseModel):
     pillar: str
     title: str
     description: Optional[str] = None
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, value: str) -> str:
+        normalized = _normalize_goal_title(value)
+        if not normalized:
+            raise ValueError("title vazio")
+        return normalized
 
 class AnalyzeResponseResult(BaseModel):
     feedback: str
@@ -1268,7 +1296,7 @@ REGRAS DE ANÁLISE:
 1. SUBJETIVIDADE OBRIGATÓRIA: CITE o contexto específico da resposta do usuário no seu feedback. Prove que você leu. (Ex: se ele falou de "farmácia", mencione "o negócio").
 2. RIGOR: Se a resposta for genérica ("vou melhorar") sem especificar O QUE e QUANDO, retorne is_satisfactory=false.
 3. DETECTED_GOALS e OBJECTIVES: Só preencha se houver um verbo de ação claro + uma medida de tempo/quantidade. NUNCA copie o texto do usuário na íntegra.
-4. Em DETECTED_GOALS, retorne APENAS `title` com a frase completa da meta (única instrução). Não retorne `description`.
+4. Em DETECTED_GOALS, retorne APENAS `title` curto (máximo de 10 palavras) no formato [Verbo de Ação] + [Frequência/Métrica]. Não retorne `description`.
 5. FEEDBACK: Máximo de 3 linhas. Se is_satisfactory=false, dê um puxão de orelha apontando a falta de especificidade."""
 
     user_message = f"Pilar: {pillar}\nPergunta: {question}\nResposta do usuário: {answer}"
