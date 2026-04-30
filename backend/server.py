@@ -23,6 +23,7 @@ import string
 import asyncio
 import requests
 import re
+import sqlite3
 import hashlib
 import unicodedata
 import httpx
@@ -43,6 +44,7 @@ from whatsapp_utils import (
     normalize_whatsapp_jid,
     send_whatsapp_media,
     send_whatsapp_text,
+    send_whatsapp_message as send_whatsapp_message_via_evolution,
 )
 
 ROOT_DIR = Path(__file__).parent
@@ -1183,6 +1185,58 @@ async def build_user_context(user_id: str) -> str:
     
     return "\n".join(context_parts)
 
+ADMIN_ROLES = {"ADMIN"}
+
+def _ensure_admin_role(user_role: Optional[str]) -> None:
+    if (user_role or "").upper() not in ADMIN_ROLES:
+        raise PermissionError("Acesso negado: apenas administradores podem usar esta ferramenta.")
+
+def _is_safe_select_query(sql_query: str) -> bool:
+    normalized = (sql_query or "").strip().lower()
+    if not normalized.startswith("select"):
+        return False
+    blocked = [" drop ", " delete ", " update ", " insert ", " alter ", " truncate ", " create "]
+    padded = f" {normalized} "
+    return not any(token in padded for token in blocked)
+
+async def execute_db_query(sql_query: str, user_role: Optional[str]) -> List[Dict[str, Any]]:
+    _ensure_admin_role(user_role)
+    if not _is_safe_select_query(sql_query):
+        raise ValueError("Consulta inválida. Apenas comandos SELECT são permitidos.")
+
+    users = await db.users.find({}, {"_id": 0, "id": 1, "full_name": 1, "whatsapp": 1, "email": 1, "role": 1, "created_at": 1}).to_list(5000)
+    goals = await db.goals.find({}, {"_id": 0, "id": 1, "user_id": 1, "title": 1, "progress": 1, "status": 1}).to_list(5000)
+    nps = await db.nps_responses.find({}, {"_id": 0, "id": 1, "user_id": 1, "score": 1, "feedback": 1}).to_list(5000)
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("CREATE TABLE users (id TEXT, nome TEXT, whatsapp TEXT, email TEXT, cargo TEXT, data_cadastro TEXT)")
+    cur.execute("CREATE TABLE goals (id TEXT, user_id TEXT, titulo TEXT, progresso REAL, status TEXT)")
+    cur.execute("CREATE TABLE nps_responses (id TEXT, user_id TEXT, nota REAL, feedback TEXT)")
+
+    cur.executemany("INSERT INTO users VALUES (?, ?, ?, ?, ?, ?)", [
+        (u.get("id", ""), u.get("full_name", ""), u.get("whatsapp", ""), u.get("email", ""), u.get("role", ""), u.get("created_at", "")) for u in users
+    ])
+    cur.executemany("INSERT INTO goals VALUES (?, ?, ?, ?, ?)", [
+        (g.get("id", ""), g.get("user_id", ""), g.get("title", ""), g.get("progress", 0), g.get("status", "")) for g in goals
+    ])
+    cur.executemany("INSERT INTO nps_responses VALUES (?, ?, ?, ?)", [
+        (r.get("id", ""), r.get("user_id", ""), r.get("score", 0), r.get("feedback", "")) for r in nps
+    ])
+
+    try:
+        rows = cur.execute(sql_query).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+async def send_whatsapp_message(phone: str, message: str, user_role: Optional[str]) -> Dict[str, str]:
+    _ensure_admin_role(user_role)
+    await send_whatsapp_message_via_evolution(phone, message)
+    return {"status": "sent"}
+
 def get_ai_provider_settings() -> Dict[str, str]:
     """Return Groq provider settings."""
     return {
@@ -1198,7 +1252,8 @@ async def call_ai_provider(
     history: List[dict] = None,
     model: Optional[str] = None,
     temperature: float = 0.7,
-    max_tokens: int = 400
+    max_tokens: int = 400,
+    user_role: Optional[str] = None,
 ) -> str:
     """Call configured AI provider for chat completion using OpenAI-compatible API."""
     provider = get_ai_provider_settings()
@@ -1215,6 +1270,13 @@ async def call_ai_provider(
             messages.append({"role": "assistant", "content": msg["assistant_message"]})
     
     messages.append({"role": "user", "content": user_message})
+
+    tools = None
+    if (user_role or "").upper() in ADMIN_ROLES:
+        tools = [
+            {"type": "function", "function": {"name": "execute_db_query", "description": "Executa consulta analítica SQL read-only nas tabelas users, goals e nps_responses.", "parameters": {"type": "object", "properties": {"sql_query": {"type": "string"}}, "required": ["sql_query"]}}},
+            {"type": "function", "function": {"name": "send_whatsapp_message", "description": "Envia mensagem via WhatsApp após confirmação humana do administrador.", "parameters": {"type": "object", "properties": {"phone": {"type": "string"}, "message": {"type": "string"}}, "required": ["phone", "message"]}}}
+        ]
     
     try:
         response = await asyncio.to_thread(
@@ -1224,12 +1286,13 @@ async def call_ai_provider(
                 "Authorization": f"Bearer {provider['api_key']}",
                 "Content-Type": "application/json"
             },
-            json={
+            json={k: v for k, v in {
                 "model": model or provider["model"],
                 "messages": messages,
                 "temperature": temperature,
-                "max_tokens": max_tokens
-            },
+                "max_tokens": max_tokens,
+                "tools": tools
+            }.items() if v is not None},
             timeout=60
         )
 
@@ -1249,7 +1312,7 @@ async def call_ai_provider(
         logger.error(f"{provider['name']} API error: {e}")
         return "Erro interno ao processar sua mensagem. Tente novamente."
 
-async def chat_with_elios(user_id: str, message: str, context: str = None, pillar: str = None) -> str:
+async def chat_with_elios(user_id: str, message: str, context: str = None, pillar: str = None, user_role: Optional[str] = None) -> str:
     """Main function to chat with ELIOS"""
     
     # Get system prompt
@@ -1276,7 +1339,10 @@ async def chat_with_elios(user_id: str, message: str, context: str = None, pilla
     history.reverse()
     
     # Call configured AI provider
-    response = await call_ai_provider(full_system_message, full_user_message, history)
+    admin_protocol = ""
+    if True:
+        admin_protocol = "\n\nPROTOCOLO OBRIGATÓRIO PARA WHATSAPP: se o admin pedir envio, primeiro use execute_db_query para buscar nome completo, whatsapp e email; depois responda exatamente pedindo confirmação: Encontrei o usuário [NOME], com WhatsApp [X] e Email [Y]. Posso prosseguir com o envio?; só após confirmação explícita chame send_whatsapp_message."
+    response = await call_ai_provider(full_system_message + admin_protocol, full_user_message, history, user_role=user_role)
     
     # Save to chat history
     chat_entry = {
@@ -3210,7 +3276,8 @@ async def chat(data: ChatMessage, user: dict = Depends(get_current_user)):
         user["id"], 
         data.message, 
         data.context,
-        data.pillar
+        data.pillar,
+        user.get("role")
     )
     return {"response": response}
 

@@ -118,3 +118,13 @@ async def send_whatsapp_media(
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(endpoint, json=payload, headers=headers)
         response.raise_for_status()
+
+
+async def send_whatsapp_message(
+    phone: str,
+    message: str,
+    api_url: str = EVOLUTION_API_URL,
+    instance: str = EVOLUTION_INSTANCE,
+):
+    formatted_phone = format_phone_for_whatsapp(phone)
+    await send_whatsapp_text(formatted_phone, message, api_url=api_url, instance=instance)
