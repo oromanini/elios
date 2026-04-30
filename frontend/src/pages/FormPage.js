@@ -24,6 +24,8 @@ import {
   Phone
 } from 'lucide-react';
 
+const NPS_SCORE_OPTIONS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
 const PILLAR_ICON_THEMES = {
   'ESPIRITUALIDADE': { bg: '#7C3AED', accent: '#C4B5FD' },
   'CUIDADOS COM A SAÚDE': { bg: '#059669', accent: '#6EE7B7' },
@@ -618,25 +620,29 @@ const FormPage = () => {
             <div className="space-y-3 rounded-xl border border-slate-700 bg-slate-900/40 p-4">
               <div className="flex items-center justify-between gap-3">
                 <Label className="text-slate-200 text-sm">
-                  NPS deste pilar (0 = muito ruim, 10 = excelente)
+                  NPS deste pilar (de 0 a 10)
                 </Label>
                 <span className="text-primary font-bold text-lg">
                   {ratings[question.id] ?? '-'}
                 </span>
               </div>
-              <Input
-                type="range"
-                min="0"
-                max="10"
-                step="1"
-                value={ratings[question.id] ?? 5}
-                onChange={(e) => handleRatingChange(question.id, e.target.value)}
-                className="h-2 cursor-pointer accent-primary"
-                data-testid={`form-rating-${questionIndex}`}
-              />
-              <div className="flex justify-between text-xs text-slate-400">
-                <span>0</span>
-                <span>10</span>
+              <div className="grid grid-cols-6 md:grid-cols-11 gap-2">
+                {NPS_SCORE_OPTIONS.map((score) => {
+                  const isSelected = ratings[question.id] === score;
+                  return (
+                    <Button
+                      key={score}
+                      type="button"
+                      variant={isSelected ? 'default' : 'outline'}
+                      onClick={() => handleRatingChange(question.id, score)}
+                      className={`h-11 ${isSelected ? 'bg-primary text-primary-foreground' : 'border-white/20 text-slate-200 hover:bg-white/10'}`}
+                      data-testid={`form-rating-${questionIndex}-${score}`}
+                      aria-label={`Nota ${score} para ${question.title}`}
+                    >
+                      {score}
+                    </Button>
+                  );
+                })}
               </div>
             </div>
           )}
