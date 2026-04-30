@@ -39,11 +39,23 @@ class FakeCollection:
                 return {"matched_count": 1}
         return {"matched_count": 0}
 
+    async def update_many(self, query, update):
+        matched_count = 0
+        for idx, doc in enumerate(self.docs):
+            if all(doc.get(k) == v for k, v in query.items()):
+                updated = deepcopy(doc)
+                if "$set" in update:
+                    updated.update(update["$set"])
+                self.docs[idx] = updated
+                matched_count += 1
+        return {"matched_count": matched_count}
+
 
 class FakeDB:
-    def __init__(self, users=None, sessions=None):
+    def __init__(self, users=None, sessions=None, password_reset_tokens=None):
         self.users = FakeCollection(users or [])
         self.sessions = FakeCollection(sessions or [])
+        self.password_reset_tokens = FakeCollection(password_reset_tokens or [])
 
 
 @pytest.fixture
@@ -120,3 +132,75 @@ def test_logout_revokes_session_and_clears_cookie(seeded_db):
 
     assert logout_response.status_code == 200
     assert seeded_db.sessions.docs[0]["revoked_at"] is not None
+
+
+def test_forgot_password_ignores_inactive_user(monkeypatch):
+    inactive_user_db = FakeDB(
+        users=[
+            {
+                "id": "user-inactive",
+                "full_name": "Inativo",
+                "email": "inativo@elios.com",
+                "password_hash": server.hash_password("SenhaForte@123"),
+                "role": "DEFAULT",
+                "is_active": False,
+            }
+        ]
+    )
+    monkeypatch.setattr(server, "db", inactive_user_db)
+    monkeypatch.setattr(server, "send_password_reset_email", lambda *_args, **_kwargs: True)
+    client = TestClient(server.app)
+
+    response = client.post("/api/auth/forgot-password", json={"email": "inativo@elios.com"})
+
+    assert response.status_code == 200
+    assert inactive_user_db.password_reset_tokens.docs == []
+
+
+def test_reset_password_requires_active_user_and_revokes_sessions(monkeypatch):
+    now = server.datetime.now(server.timezone.utc)
+    token = "token-seguro"
+    token_hash = server.hash_password_reset_token(token)
+    user_db = FakeDB(
+        users=[
+            {
+                "id": "user-1",
+                "full_name": "Usuário Teste",
+                "email": "teste@elios.com",
+                "password_hash": server.hash_password("SenhaForte@123"),
+                "role": "DEFAULT",
+                "is_active": True,
+            }
+        ],
+        sessions=[
+            {"id": "sess-1", "user_id": "user-1", "revoked_at": None},
+            {"id": "sess-2", "user_id": "user-1", "revoked_at": None},
+        ],
+        password_reset_tokens=[
+            {
+                "id": "rt-1",
+                "user_id": "user-1",
+                "token_hash": token_hash,
+                "expires_at": (now + server.timedelta(minutes=30)).isoformat(),
+                "used_at": None,
+            },
+            {
+                "id": "rt-2",
+                "user_id": "user-1",
+                "token_hash": "outro",
+                "expires_at": (now + server.timedelta(minutes=30)).isoformat(),
+                "used_at": None,
+            },
+        ],
+    )
+    monkeypatch.setattr(server, "db", user_db)
+    client = TestClient(server.app)
+
+    response = client.post(
+        "/api/auth/reset-password",
+        json={"token": token, "new_password": "NovaSenhaForte@123"},
+    )
+
+    assert response.status_code == 200
+    assert all(session["revoked_at"] is not None for session in user_db.sessions.docs)
+    assert all(reset_doc["used_at"] is not None for reset_doc in user_db.password_reset_tokens.docs)

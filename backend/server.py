@@ -2308,10 +2308,11 @@ async def change_password(data: PasswordChange, user: dict = Depends(get_current
 @api_router.post("/auth/forgot-password")
 async def forgot_password(payload: ForgotPasswordRequest):
     """Generate a password reset token and send instructions by email."""
-    user = await db.users.find_one({"email": payload.email}, {"_id": 0})
+    generic_response = {"message": "Se o email existir, enviaremos instruções para redefinição de senha."}
+    user = await db.users.find_one({"email": payload.email, "is_active": True}, {"_id": 0})
     if not user:
         # Resposta neutra para evitar enumeração de usuários
-        return {"message": "Se o email existir, enviaremos instruções para redefinição de senha."}
+        return generic_response
 
     token, token_hash = generate_password_reset_token()
     now = datetime.now(timezone.utc)
@@ -2334,7 +2335,7 @@ async def forgot_password(payload: ForgotPasswordRequest):
     )
 
     send_password_reset_email(payload.email, user.get("full_name", "Usuário"), token)
-    return {"message": "Se o email existir, enviaremos instruções para redefinição de senha."}
+    return generic_response
 
 @api_router.post("/auth/reset-password")
 async def reset_password(payload: ResetPasswordRequest):
@@ -2355,13 +2356,26 @@ async def reset_password(payload: ResetPasswordRequest):
     if expires_at < datetime.now(timezone.utc):
         raise HTTPException(status_code=400, detail="Token inválido ou expirado.")
 
+    user = await db.users.find_one({"id": token_doc["user_id"], "is_active": True}, {"_id": 0, "id": 1})
+    if not user:
+        raise HTTPException(status_code=400, detail="Token inválido ou expirado.")
+
+    now = datetime.now(timezone.utc)
     await db.users.update_one(
         {"id": token_doc["user_id"]},
         {"$set": {"password_hash": hash_password(payload.new_password)}}
     )
     await db.password_reset_tokens.update_one(
         {"id": token_doc["id"]},
-        {"$set": {"used_at": datetime.now(timezone.utc).isoformat()}}
+        {"$set": {"used_at": now.isoformat()}}
+    )
+    await db.password_reset_tokens.update_many(
+        {"user_id": token_doc["user_id"], "used_at": None},
+        {"$set": {"used_at": now.isoformat()}}
+    )
+    await db.sessions.update_many(
+        {"user_id": token_doc["user_id"], "revoked_at": None},
+        {"$set": {"revoked_at": now.isoformat()}}
     )
 
     return {"message": "Senha redefinida com sucesso."}
