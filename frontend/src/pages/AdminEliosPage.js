@@ -8,6 +8,7 @@ import { Textarea } from '../components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '../components/ui/alert-dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { adminAPI } from '../services/api';
 import { toast } from 'sonner';
 import {
@@ -48,6 +49,7 @@ const AdminEliosPage = () => {
   const [isDefaultPrompt, setIsDefaultPrompt] = useState(true);
   const [promptLoading, setPromptLoading] = useState(false);
   const [savingPrompt, setSavingPrompt] = useState(false);
+  const [selectedKnowledge, setSelectedKnowledge] = useState(null);
 
   useEffect(() => {
     loadKnowledge();
@@ -372,7 +374,8 @@ const AdminEliosPage = () => {
                         return (
                           <div
                             key={item.id}
-                            className="glass rounded-lg p-4 flex items-start gap-4"
+                            className="glass rounded-lg p-4 flex items-start gap-4 cursor-pointer transition-colors hover:bg-white/5"
+                            onClick={() => setSelectedKnowledge(item)}
                           >
                             <div className="w-10 h-10 rounded-lg bg-white/10 flex items-center justify-center flex-shrink-0">
                               <CategoryIcon className="text-white" size={20} />
@@ -398,6 +401,7 @@ const AdminEliosPage = () => {
                                   size="icon"
                                   variant="ghost"
                                   className="h-8 w-8 text-neutral-500 hover:text-red-400 flex-shrink-0"
+                                  onClick={(e) => e.stopPropagation()}
                                 >
                                   <Trash2 size={16} />
                                 </Button>
@@ -435,6 +439,42 @@ const AdminEliosPage = () => {
           </TabsContent>
         </Tabs>
       </div>
+
+      <Dialog open={!!selectedKnowledge} onOpenChange={(open) => !open && setSelectedKnowledge(null)}>
+        <DialogContent className="glass-card border-white/10 sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-white flex items-center gap-2">
+              <BookOpen size={18} />
+              Detalhes do conhecimento
+            </DialogTitle>
+            <DialogDescription className="text-neutral-400">
+              Visualize o conteúdo completo e os metadados do item selecionado.
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedKnowledge && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-neutral-400">Categoria:</span>
+                <span className="text-sm text-white font-medium capitalize">{selectedKnowledge.category}</span>
+                <span className={`px-2 py-0.5 rounded-full text-xs ${
+                  selectedKnowledge.priority === 3 ? 'bg-red-500/20 text-red-400' :
+                  selectedKnowledge.priority === 2 ? 'bg-amber-500/20 text-amber-400' :
+                  'bg-neutral-800 text-neutral-400'
+                }`}>
+                  P{selectedKnowledge.priority}
+                </span>
+              </div>
+
+              <div className="rounded-lg border border-white/10 bg-neutral-900/50 p-4 max-h-[60vh] overflow-y-auto">
+                <p className="text-sm text-neutral-200 whitespace-pre-wrap leading-relaxed">
+                  {selectedKnowledge.content}
+                </p>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 };
