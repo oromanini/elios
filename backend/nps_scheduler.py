@@ -97,7 +97,6 @@ async def process_nps_cycles(db, target_user_id: str = None, force: bool = False
                     last_record.get("status") == "completed"
                     and isinstance(last_send_date, datetime)
                     and last_cycle < 12
-                    and (force or now - last_send_date >= timedelta(days=30))
                 ):
                     should_generate = True
                     next_cycle = last_cycle + 1
@@ -146,7 +145,7 @@ async def process_nps_cycles(db, target_user_id: str = None, force: bool = False
 async def process_nps_reminders(db):
     now = datetime.now(timezone.utc)
     pending_records = await db.nps_records.find(
-        {"status": "pending", "reminder_sent": {"$ne": True}}
+        {"status": "pending"}
     ).to_list(length=None)
 
     for record in pending_records:
@@ -158,6 +157,12 @@ async def process_nps_reminders(db):
                 send_date = send_date.replace(tzinfo=timezone.utc)
             if now - send_date < timedelta(hours=24):
                 continue
+            reminder_sent_at = record.get("reminder_sent_at")
+            if isinstance(reminder_sent_at, datetime):
+                if reminder_sent_at.tzinfo is None:
+                    reminder_sent_at = reminder_sent_at.replace(tzinfo=timezone.utc)
+                if reminder_sent_at.date() == now.date():
+                    continue
 
             user = await db.users.find_one({"id": record.get("user_id")})
             if not user:
