@@ -3690,8 +3690,10 @@ async def startup_scheduler():
     scheduler.add_job(
         process_nps_cycles,
         "cron",
+        day=22,
         hour=8,
         minute=0,
+        timezone="America/Sao_Paulo",
         args=[db],
         id="nps_daily_cron",
         replace_existing=True,
@@ -3699,8 +3701,9 @@ async def startup_scheduler():
     scheduler.add_job(
         process_nps_reminders,
         "cron",
-        hour=14,
+        hour=8,
         minute=0,
+        timezone="America/Sao_Paulo",
         args=[db],
         id="nps_reminders_daily_cron",
         replace_existing=True,
