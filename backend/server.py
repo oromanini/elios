@@ -1278,6 +1278,14 @@ async def call_ai_provider(
             {"type": "function", "function": {"name": "send_whatsapp_message", "description": "Envia mensagem via WhatsApp após confirmação humana do administrador.", "parameters": {"type": "object", "properties": {"phone": {"type": "string"}, "message": {"type": "string"}}, "required": ["phone", "message"]}}}
         ]
     
+    payload = {k: v for k, v in {
+        "model": model or provider["model"],
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "tools": tools
+    }.items() if v is not None}
+
     try:
         response = await asyncio.to_thread(
             requests.post,
@@ -1286,13 +1294,7 @@ async def call_ai_provider(
                 "Authorization": f"Bearer {provider['api_key']}",
                 "Content-Type": "application/json"
             },
-            json={k: v for k, v in {
-                "model": model or provider["model"],
-                "messages": messages,
-                "temperature": temperature,
-                "max_tokens": max_tokens,
-                "tools": tools
-            }.items() if v is not None},
+            json=payload,
             timeout=60
         )
 
@@ -1303,7 +1305,81 @@ async def call_ai_provider(
             return "Serviço de IA temporariamente indisponível. Tente novamente em instantes."
 
         data = response.json()
-        return data["choices"][0]["message"]["content"]
+        first_choice = (data.get("choices") or [{}])[0]
+        first_message = first_choice.get("message") or {}
+
+        tool_calls = first_message.get("tool_calls") or []
+        if tool_calls:
+            messages.append({
+                "role": "assistant",
+                "content": first_message.get("content") or "",
+                "tool_calls": tool_calls
+            })
+
+            for tool_call in tool_calls:
+                function_data = tool_call.get("function") or {}
+                function_name = function_data.get("name")
+                raw_arguments = function_data.get("arguments") or "{}"
+                tool_call_id = tool_call.get("id")
+
+                try:
+                    parsed_arguments = json.loads(raw_arguments)
+                except json.JSONDecodeError:
+                    parsed_arguments = {}
+
+                tool_result: Any
+                try:
+                    if function_name == "execute_db_query":
+                        tool_result = await execute_db_query(
+                            parsed_arguments.get("sql_query", ""),
+                            user_role
+                        )
+                    elif function_name == "send_whatsapp_message":
+                        tool_result = await send_whatsapp_message(
+                            parsed_arguments.get("phone", ""),
+                            parsed_arguments.get("message", ""),
+                            user_role
+                        )
+                    else:
+                        tool_result = {"error": f"Ferramenta não suportada: {function_name}"}
+                except Exception as tool_error:
+                    tool_result = {"error": str(tool_error)}
+
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call_id,
+                    "name": function_name or "unknown_tool",
+                    "content": json.dumps(tool_result, ensure_ascii=False)
+                })
+
+            second_response = await asyncio.to_thread(
+                requests.post,
+                f"{provider['base_url']}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {provider['api_key']}",
+                    "Content-Type": "application/json"
+                },
+                json={k: v for k, v in {
+                    "model": model or provider["model"],
+                    "messages": messages,
+                    "temperature": temperature,
+                    "max_tokens": max_tokens
+                }.items() if v is not None},
+                timeout=60
+            )
+
+            if second_response.status_code != 200:
+                logger.error(
+                    f"{provider['name']} API second call error: {second_response.status_code} - {second_response.text}"
+                )
+                return "Serviço de IA temporariamente indisponível. Tente novamente em instantes."
+
+            second_data = second_response.json()
+            second_choice = (second_data.get("choices") or [{}])[0]
+            second_message = second_choice.get("message") or {}
+            return second_message.get("content") or "Não foi possível gerar uma resposta final."
+
+        return first_message.get("content") or "Não foi possível gerar uma resposta."
 
     except requests.Timeout:
         logger.error(f"{provider['name']} API timeout")
