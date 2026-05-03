@@ -34,6 +34,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from nps_scheduler import process_nps_cycles, process_nps_reminders
 from goals_scheduler import process_weekly_goal_reminders
+from admin_tools import AdminCommandRouter
 from whatsapp_utils import (
     EVOLUTION_API_KEY,
     EVOLUTION_API_URL as DEFAULT_EVOLUTION_API_URL,
@@ -2231,7 +2232,14 @@ async def whatsapp_webhook(request: Request):
 
     user = resolution["user"]
     logger.info("Webhook: Iniciando processamento para o mentorado ID: %s (LID: %s)", user["id"], remote_jid)
-    ai_response = await chat_with_elios(user["id"], incoming_message)
+
+    if user.get("role") == "ADMIN":
+        admin_result = await admin_command_router.handle(user, incoming_message)
+        if admin_result.handled:
+            await _send_chatbot_whatsapp_message(target_id, admin_result.response)
+            return {"status": "ok", "reason": "admin_command"}
+
+    ai_response = await chat_with_elios(user["id"], incoming_message, user_role=user.get("role"))
 
     await _send_chatbot_whatsapp_message(target_id, ai_response)
     return {"status": "ok", "reason": "linked"}
